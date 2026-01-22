@@ -276,6 +276,7 @@ impl PtyInstance {
     }
 
     /// Check if currently connected
+    #[allow(dead_code)]
     pub fn is_connected(&self) -> bool {
         self.is_connected.load(Ordering::SeqCst)
     }

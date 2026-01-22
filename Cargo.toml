@@ -69,6 +69,9 @@ common = { path = "crates/common" }
 # Memory allocator for musl builds
 mimalloc = "0.1"
 
+# OpenSSL vendored for musl static builds
+openssl = { version = "0.10", features = ["vendored"] }
+
 [profile.release]
 lto = true
 codegen-units = 1

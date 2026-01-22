@@ -167,6 +167,7 @@ impl InstanceManager {
 
     /// Remove instances that are no longer running
     /// Returns the number of instances removed
+    #[allow(dead_code)]
     pub async fn cleanup_dead_instances(&mut self) -> usize {
         let mut to_remove = Vec::new();
         for (id, instance) in &self.instances {

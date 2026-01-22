@@ -52,6 +52,7 @@ impl AgentRecord {
 }
 
 /// Agent tag record in database
+#[allow(dead_code)]
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
 pub struct AgentTagRecord {
     /// Agent UUID

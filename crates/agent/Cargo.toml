@@ -31,6 +31,7 @@ hostname = "0.4"
 
 [target.'cfg(target_env = "musl")'.dependencies]
 mimalloc = { workspace = true }
+openssl = { workspace = true }
 
 [build-dependencies]
 thunk-rs = "0.3"

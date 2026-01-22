@@ -36,6 +36,12 @@
     }
   }
 
+  function handleDialogKeyDown(event: KeyboardEvent): void {
+    if (event.key === 'Escape') {
+      onClose();
+    }
+  }
+
   function handleSelectExisting(tag: string): void {
     if (!currentTags.includes(tag)) {
       wsService.addAgentTag(agentId, tag);
@@ -44,7 +50,14 @@
 </script>
 
 <div class="tag-editor-overlay" onclick={onClose} role="presentation">
-  <div class="tag-editor" onclick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
+  <div
+    class="tag-editor"
+    onclick={(e) => e.stopPropagation()}
+    onkeydown={handleDialogKeyDown}
+    role="dialog"
+    aria-modal="true"
+    tabindex="-1"
+  >
     <div class="editor-header">
       <h3>编辑标签</h3>
       <span class="agent-name">{agentName}</span>
@@ -52,7 +65,7 @@
     </div>
 
     <div class="current-tags">
-      <label>当前标签:</label>
+      <span class="section-label">当前标签:</span>
       <div class="tags-container">
         {#if currentTags.length === 0}
           <span class="no-tags">暂无标签</span>
@@ -68,9 +81,10 @@
     </div>
 
     <div class="add-tag-section">
-      <label>添加新标签:</label>
+      <label for="new-tag-input">添加新标签:</label>
       <div class="input-row">
         <input
+          id="new-tag-input"
           type="text"
           bind:value={newTag}
           onkeydown={handleKeyDown}
@@ -85,7 +99,7 @@
 
     {#if $allTags.filter(t => !currentTags.includes(t)).length > 0}
       <div class="existing-tags">
-        <label>快速选择现有标签:</label>
+        <span class="section-label">快速选择现有标签:</span>
         <div class="tags-container">
           {#each $allTags.filter(t => !currentTags.includes(t)) as tag}
             <button class="existing-tag" onclick={() => handleSelectExisting(tag)}>
@@ -165,7 +179,8 @@
     margin-bottom: 1.25rem;
   }
 
-  label {
+  label,
+  .section-label {
     display: block;
     font-size: 0.875rem;
     color: var(--text-secondary, #9ca3af);
