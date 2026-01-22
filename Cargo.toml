@@ -1,0 +1,78 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/common",
+    "crates/agent",
+    "crates/server",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+authors = ["Claude Web Tunnel Contributors"]
+license = "MIT"
+repository = "https://github.com/yourname/claude-web-tunnel"
+
+[workspace.dependencies]
+# Async runtime
+tokio = { version = "1", features = ["full"] }
+
+# Web framework
+axum = { version = "0.7", features = ["ws"] }
+tower = "0.4"
+tower-http = { version = "0.5", features = ["cors", "fs"] }
+
+# Static file embedding
+rust-embed = "8"
+mime_guess = "2"
+
+# WebSocket
+tokio-tungstenite = { version = "0.21", features = ["native-tls"] }
+futures-util = "0.3"
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Database
+sqlx = { version = "0.7", features = ["runtime-tokio", "any", "sqlite", "mysql"] }
+redis = { version = "0.25", features = ["tokio-comp", "connection-manager"] }
+deadpool-redis = "0.15"
+
+# PTY
+portable-pty = "0.8"
+
+# CLI
+clap = { version = "4", features = ["derive"] }
+
+# Configuration
+config = "0.14"
+toml = "0.8"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing-appender = "0.2"
+
+# Utilities
+uuid = { version = "1", features = ["v4", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+thiserror = "1"
+anyhow = "1"
+rand = "0.8"
+base64 = "0.22"
+sha2 = "0.10"
+
+# Internal crates
+common = { path = "crates/common" }
+
+# Memory allocator for musl builds
+mimalloc = "0.1"
+
+[profile.release]
+lto = true
+codegen-units = 1
+opt-level = "z"
+debug = "none"
+panic = "abort"
+strip = true

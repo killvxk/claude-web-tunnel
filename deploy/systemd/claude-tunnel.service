@@ -1,0 +1,36 @@
+[Unit]
+Description=Claude Web Tunnel Server
+Documentation=https://github.com/yourname/claude-web-tunnel
+After=network.target redis.service
+Wants=redis.service
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+ExecStart=/opt/claude-tunnel/bin/claude-tunnel-server --config /opt/claude-tunnel/config/server.toml
+ExecReload=/bin/kill -HUP $MAINPID
+Restart=always
+RestartSec=5
+WorkingDirectory=/opt/claude-tunnel
+
+# 环境变量
+Environment=RUST_LOG=info
+Environment=RUST_BACKTRACE=1
+
+# 安全加固
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/claude-tunnel/logs /opt/claude-tunnel/data
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+
+# 资源限制
+LimitNOFILE=65535
+LimitNPROC=4096
+
+[Install]
+WantedBy=multi-user.target

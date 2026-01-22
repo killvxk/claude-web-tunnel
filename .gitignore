@@ -1,0 +1,66 @@
+# Rust
+/target/
+**/*.rs.bk
+Cargo.lock
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Logs
+*.log
+logs/
+
+# Database
+*.db
+*.db-journal
+*.db-shm
+*.db-wal
+
+# Node.js (for web frontend)
+node_modules/
+web/dist/
+web/build/
+.svelte-kit/
+
+# Documentation (personal notes, not for repo)
+# docs/  # Disabled - we want to track docs/memory and docs/plan
+!docs/memory/
+!docs/plan/
+
+# Config files with secrets
+*.local.toml
+config.toml
+!config.example.toml
+
+# Build artifacts
+dist/
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Test coverage
+coverage/
+*.profraw
+*.profdata
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# AI
+.claude/

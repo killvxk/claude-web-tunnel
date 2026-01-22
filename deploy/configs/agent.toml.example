@@ -1,0 +1,38 @@
+# Claude Web Tunnel Agent 配置文件示例
+# 复制此文件为 agent.toml 并修改配置
+
+[agent]
+# Agent 名称 (显示在 Web 界面)
+name = "my-workstation"
+
+# Admin Token - 完整权限 (创建/关闭实例、选择目录、操作终端)
+# 建议使用随机生成的 32+ 字符字符串: openssl rand -base64 32
+admin_token = "CHANGE_ME_TO_A_RANDOM_TOKEN"
+
+# Share Token - 仅操作权限 (查看、操作现有实例)
+# 用于分享给他人使用
+share_token = "CHANGE_ME_TO_ANOTHER_RANDOM_TOKEN"
+
+[server]
+# Server WebSocket URL
+# 注意: URL 不需要包含 /ws/agent，代码会自动追加
+url = "wss://tunnel.example.com"
+
+# 断线重连间隔 (秒)
+# 当连接断开或心跳发送失败时，会等待此间隔后自动重连
+reconnect_interval = 5
+
+# 心跳间隔 (秒)
+# Agent 定期向 Server 发送心跳以保持连接活跃
+# 如果心跳发送失败，将触发自动重连
+heartbeat_interval = 30
+
+[logging]
+# 日志级别: trace, debug, info, warn, error
+level = "info"
+
+# 日志文件路径 (可选，不设置则只输出到 stdout)
+file = "./logs/agent.log"
+
+# 日志轮转: "daily" 或 "hourly"
+rotation = "daily"

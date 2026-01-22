@@ -1,0 +1,62 @@
+# Claude Web Tunnel Server 配置文件示例
+# 复制此文件为 server.toml 并修改配置
+
+[server]
+# 监听地址 (通过 Nginx 反代，只需监听本地)
+host = "127.0.0.1"
+port = 8080
+
+[database]
+# 数据库类型: "sqlite" 或 "mysql"
+type = "sqlite"
+
+# SQLite 配置 (type = "sqlite" 时使用)
+sqlite_path = "/opt/claude-tunnel/data/tunnel.db"
+
+# MySQL 配置 (type = "mysql" 时使用)
+# mysql_url = "mysql://tunnel:your_password@localhost/claude_tunnel"
+
+# Redis 配置 (可选，用于速率限制)
+# 如果不配置，速率限制功能将被禁用
+# redis_url = "redis://127.0.0.1:6379"
+
+[security]
+# 超级管理员 Token (建议使用随机生成的 32+ 字符字符串)
+# 可使用: openssl rand -base64 32
+super_admin_token = "CHANGE_ME_TO_A_RANDOM_TOKEN"
+
+# Token 暴力破解保护 - 每分钟最大认证尝试次数
+rate_limit_per_minute = 10
+
+# Token 最小长度
+token_min_length = 32
+
+[logging]
+# 日志级别: trace, debug, info, warn, error
+level = "info"
+
+# 日志文件路径 (可选，不设置则只输出到 stdout)
+file = "/opt/claude-tunnel/logs/server.log"
+
+# 日志轮转: "daily" 或 "hourly"
+rotation = "daily"
+
+[terminal_history]
+# 启用终端历史记录回放
+enabled = true
+
+# 每个实例的默认缓冲区大小 (KB)
+default_buffer_size_kb = 64
+
+# 最大缓冲区大小 (KB)
+max_buffer_size_kb = 512
+
+# 历史记录保留天数
+retention_days = 7
+
+[audit_log]
+# 启用审计日志
+enabled = true
+
+# 审计日志保留天数
+retention_days = 30
