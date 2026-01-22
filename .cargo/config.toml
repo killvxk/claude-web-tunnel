@@ -1,0 +1,13 @@
+# Claude Web Tunnel Cargo Configuration
+
+# Windows MSVC static linking
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]
+
+# Windows GNU static linking
+[target.x86_64-pc-windows-gnu]
+rustflags = ["-C", "target-feature=+crt-static"]
+
+# ARM64 Windows
+[target.aarch64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]
