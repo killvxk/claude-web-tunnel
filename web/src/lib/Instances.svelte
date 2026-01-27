@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { app, auth, instances, wsStatus } from '../stores';
+  import { app, auth, instances, wsStatus, admin } from '../stores';
   import { theme } from '../stores/theme';
   import { searchHistory } from '../stores/searchHistory';
   import { allTags, selectedTags, groupMode, agentTags, setGroupMode, clearTagFilters } from '../stores/tags';
@@ -49,6 +49,14 @@
 
   // 检查是否有 Admin 权限
   let canManageInstances = $derived($auth.role === 'admin' || $auth.role === 'super_admin');
+
+  // 检查是否是 SuperAdmin 且有工作 Agent
+  let isSuperAdminWithWorkingAgent = $derived($auth.role === 'super_admin' && $admin.workingAgentId !== null);
+
+  // 返回 Agent 列表 (清除工作 Agent)
+  function goBackToAgentList() {
+    wsService.clearWorkingAgent();
+  }
 
   // 过滤实例 - 使用增强搜索
   let filteredInstances = $derived(
@@ -367,6 +375,31 @@
       </div>
     </div>
   </header>
+
+  <!-- Working Agent Indicator (SuperAdmin only) -->
+  {#if isSuperAdminWithWorkingAgent}
+    <div class="bg-blue-600/20 border-b border-blue-500/30 px-4 py-2">
+      <div class="max-w-7xl mx-auto flex items-center justify-between">
+        <div class="flex items-center gap-2">
+          <svg class="w-5 h-5 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+          </svg>
+          <span class="text-sm text-blue-300">
+            正在管理 Agent: <span class="font-semibold text-blue-200">{$admin.workingAgentName}</span>
+          </span>
+        </div>
+        <button
+          onclick={goBackToAgentList}
+          class="flex items-center gap-1 px-3 py-1 text-sm text-blue-300 hover:text-blue-200 hover:bg-blue-600/30 rounded transition-colors"
+        >
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
+          </svg>
+          返回 Agent 列表
+        </button>
+      </div>
+    </div>
+  {/if}
 
   <!-- Main Content -->
   <main class="max-w-7xl mx-auto px-2 sm:px-4 py-4 sm:py-8">

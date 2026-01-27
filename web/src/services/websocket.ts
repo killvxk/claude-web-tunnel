@@ -25,6 +25,8 @@ import type {
   TagRemovedMessage,
   AuditLogListMessage,
   AuditLogEntry,
+  WorkingAgentSelectedMessage,
+  WorkingAgentClearedMessage,
 } from '../types';
 
 type MessageHandler = (data: string) => void;
@@ -329,6 +331,31 @@ class WebSocketService {
     });
   }
 
+  // ========================================================================
+  // Working Agent methods (SuperAdmin only)
+  // ========================================================================
+
+  // 选择工作 Agent - 与后端 UserMessage::SelectWorkingAgent 对应
+  selectWorkingAgent(agentId: string): void {
+    this.send({
+      type: 'select_working_agent',
+      agent_id: agentId,
+    });
+  }
+
+  // 清除工作 Agent - 与后端 UserMessage::ClearWorkingAgent 对应
+  clearWorkingAgent(): void {
+    this.send({ type: 'clear_working_agent' });
+  }
+
+  // 列出指定 Agent 的实例 - 与后端 UserMessage::ListAgentInstances 对应
+  listAgentInstances(agentId: string): void {
+    this.send({
+      type: 'list_agent_instances',
+      agent_id: agentId,
+    });
+  }
+
   // 设置审计日志处理器
   setAuditLogHandler(handler: AuditLogHandler | null): void {
     this.auditLogHandler = handler;
@@ -406,6 +433,13 @@ class WebSocketService {
         case 'audit_log_list':
           this.handleAuditLogList(message as AuditLogListMessage);
           break;
+        // Working Agent responses
+        case 'working_agent_selected':
+          this.handleWorkingAgentSelected(message as WorkingAgentSelectedMessage);
+          break;
+        case 'working_agent_cleared':
+          this.handleWorkingAgentCleared();
+          break;
         default:
           console.warn('Unknown message type:', message.type);
       }
@@ -421,7 +455,12 @@ class WebSocketService {
       const token = localStorage.getItem('auth_token');
       if (token) {
         auth.login(token, role, agent_name || null, agent_id || null);
-        app.setView('instances');
+        // SuperAdmin goes to admin panel, others go to instances
+        if (role === 'super_admin') {
+          app.setView('admin');
+        } else {
+          app.setView('instances');
+        }
         // 服务器认证成功后会自动发送实例列表，不需要再请求
       }
     } else {
@@ -547,6 +586,31 @@ class WebSocketService {
     if (this.auditLogHandler) {
       this.auditLogHandler(message.logs, message.total);
     }
+  }
+
+  // ========================================================================
+  // Working Agent message handlers
+  // ========================================================================
+
+  private handleWorkingAgentSelected(message: WorkingAgentSelectedMessage): void {
+    const { agent_id, agent_name, success, error } = message;
+    console.log(`Working agent selected: ${agent_name} (${agent_id}), success: ${success}`);
+
+    if (success) {
+      admin.setWorkingAgent(agent_id, agent_name);
+      // Switch to instances view to show the agent's instances
+      app.setView('instances');
+    } else {
+      app.setError(error || 'Failed to select working agent');
+    }
+  }
+
+  private handleWorkingAgentCleared(): void {
+    console.log('Working agent cleared');
+    admin.clearWorkingAgent();
+    // Clear instances and switch back to admin panel
+    app.setInstances([]);
+    app.setView('admin');
   }
 
   private startHeartbeat(): void {

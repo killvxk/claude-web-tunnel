@@ -228,6 +228,22 @@ pub enum UserMessage {
         #[serde(default)]
         event_type: Option<String>,
     },
+    // ========================================================================
+    // Working Agent commands (SuperAdmin only)
+    // ========================================================================
+    /// Select a working agent (SuperAdmin only)
+    /// Allows SuperAdmin to operate on a specific agent's instances
+    SelectWorkingAgent {
+        /// Agent ID to work with
+        agent_id: Uuid,
+    },
+    /// Clear the working agent selection (SuperAdmin only)
+    ClearWorkingAgent,
+    /// List instances of a specific agent (SuperAdmin only)
+    ListAgentInstances {
+        /// Agent ID to list instances for
+        agent_id: Uuid,
+    },
 }
 
 /// Messages sent from Server to User
@@ -356,6 +372,22 @@ pub enum ServerToUserMessage {
         /// Total count (for pagination)
         total: u64,
     },
+    // ========================================================================
+    // Working Agent responses (SuperAdmin only)
+    // ========================================================================
+    /// Working agent selected notification
+    WorkingAgentSelected {
+        /// Agent ID that was selected
+        agent_id: Uuid,
+        /// Agent name
+        agent_name: String,
+        /// Whether the operation succeeded
+        success: bool,
+        /// Error message if failed
+        error: Option<String>,
+    },
+    /// Working agent cleared notification
+    WorkingAgentCleared,
 }
 
 // ============================================================================

@@ -131,6 +131,8 @@ pub async fn handle_agent_connection(socket: WebSocket, state: Arc<AppState>) {
     state.update_agent_instances_status(agent_id, InstanceStatus::Suspended).await;
     state.unregister_agent(agent_id).await;
     state.broadcast_agent_status(agent_id, false).await;
+    // Notify SuperAdmin users who had this agent selected as working agent
+    state.notify_working_agent_offline(agent_id).await;
     info!("Agent unregistered: {} ({})", agent_name, agent_id);
 }
 
@@ -229,8 +231,14 @@ async fn broadcast_to_agent_users(
 ) {
     let users = state.users.read().await;
     for session in users.values() {
-        // Send to users associated with this agent or super admins
-        if session.agent_id == Some(agent_id) || session.agent_id.is_none() {
+        // Send to users associated with this agent
+        // OR super admins who have this agent as their working agent
+        // OR super admins without specific agent (agent_id is None)
+        let should_send = session.agent_id == Some(agent_id)
+            || session.working_agent_id == Some(agent_id)
+            || (session.agent_id.is_none() && session.working_agent_id.is_none());
+
+        if should_send {
             let _ = session.tx.send(msg.clone()).await;
         }
     }

@@ -84,6 +84,12 @@
   function deleteAgent(agent: AgentInfo) {
     openConfirmDialog('delete', agent);
   }
+
+  // 选择 Agent 作为工作 Agent (进入实例管理)
+  function selectWorkingAgent(agent: AgentInfo) {
+    if (agent.status !== 'online') return;
+    wsService.selectWorkingAgent(agent.id);
+  }
 </script>
 
 <div class="h-viewport flex flex-col bg-theme-primary">
@@ -293,6 +299,16 @@
               <!-- Actions -->
               <div class="flex items-center gap-2 sm:flex-shrink-0">
                 {#if agent.status === 'online'}
+                  <button
+                    onclick={() => selectWorkingAgent(agent)}
+                    class="px-3 py-1.5 text-xs bg-blue-600/20 text-blue-400 hover:bg-blue-600/30 rounded-lg transition-colors flex items-center gap-1"
+                    title="选择此 Agent 进行实例管理"
+                  >
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+                    </svg>
+                    <span class="hidden sm:inline">选择</span>
+                  </button>
                   <button
                     onclick={() => forceDisconnectAgent(agent)}
                     class="px-3 py-1.5 text-xs bg-yellow-600/20 text-yellow-400 hover:bg-yellow-600/30 rounded-lg transition-colors flex items-center gap-1"

@@ -47,6 +47,10 @@ export type WsMessageType =
   | 'remove_agent_tag'
   // Audit log commands (SuperAdmin only)
   | 'get_audit_logs'
+  // Working Agent commands (SuperAdmin only)
+  | 'select_working_agent'
+  | 'clear_working_agent'
+  | 'list_agent_instances'
   // Server -> User
   | 'auth_result'
   | 'instance_list'
@@ -68,7 +72,10 @@ export type WsMessageType =
   | 'tag_added'
   | 'tag_removed'
   // Audit log responses (SuperAdmin only)
-  | 'audit_log_list';
+  | 'audit_log_list'
+  // Working Agent responses (SuperAdmin only)
+  | 'working_agent_selected'
+  | 'working_agent_cleared';
 
 // 基础 WebSocket 消息
 export interface WsMessage {
@@ -361,6 +368,41 @@ export interface AuditLogListMessage extends WsMessage {
   type: 'audit_log_list';
   logs: AuditLogEntry[];
   total: number;
+}
+
+// ============================================================================
+// Working Agent Messages (SuperAdmin only)
+// ============================================================================
+
+// 选择工作 Agent 请求
+export interface SelectWorkingAgentMessage extends WsMessage {
+  type: 'select_working_agent';
+  agent_id: string;
+}
+
+// 清除工作 Agent 请求
+export interface ClearWorkingAgentMessage extends WsMessage {
+  type: 'clear_working_agent';
+}
+
+// 列出指定 Agent 的实例请求
+export interface ListAgentInstancesMessage extends WsMessage {
+  type: 'list_agent_instances';
+  agent_id: string;
+}
+
+// 工作 Agent 选择成功响应
+export interface WorkingAgentSelectedMessage extends WsMessage {
+  type: 'working_agent_selected';
+  agent_id: string;
+  agent_name: string;
+  success: boolean;
+  error?: string;
+}
+
+// 工作 Agent 清除通知
+export interface WorkingAgentClearedMessage extends WsMessage {
+  type: 'working_agent_cleared';
 }
 
 // ============================================================================

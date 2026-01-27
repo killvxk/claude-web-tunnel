@@ -37,6 +37,8 @@ pub struct UserSession {
     pub role: Role,
     /// Associated agent ID (None for super admin viewing all)
     pub agent_id: Option<Uuid>,
+    /// Working agent ID for SuperAdmin (allows operating on specific agent's instances)
+    pub working_agent_id: Option<Uuid>,
     /// Currently attached instance IDs
     pub attached_instances: Vec<Uuid>,
     /// Channel to send messages to user
@@ -237,6 +239,7 @@ impl AppState {
             id: session_id,
             role,
             agent_id,
+            working_agent_id: None,
             attached_instances: Vec::new(),
             tx,
         };
@@ -306,6 +309,65 @@ impl AppState {
             // Send to users associated with this agent or super admins (agent_id is None)
             if session.agent_id == Some(agent_id) || session.agent_id.is_none() {
                 let _ = session.tx.send(msg.clone()).await;
+            }
+        }
+    }
+
+    // ========================================================================
+    // Working Agent methods (SuperAdmin only)
+    // ========================================================================
+
+    /// Set the working agent for a SuperAdmin session
+    pub async fn set_working_agent(&self, session_id: Uuid, agent_id: Uuid) -> bool {
+        let mut users = self.users.write().await;
+        if let Some(session) = users.get_mut(&session_id) {
+            session.working_agent_id = Some(agent_id);
+            return true;
+        }
+        false
+    }
+
+    /// Clear the working agent for a SuperAdmin session
+    pub async fn clear_working_agent(&self, session_id: Uuid) {
+        let mut users = self.users.write().await;
+        if let Some(session) = users.get_mut(&session_id) {
+            session.working_agent_id = None;
+        }
+    }
+
+    /// Get the effective agent ID for a session
+    /// For SuperAdmin: returns working_agent_id if set, otherwise None
+    /// For Admin/User: returns agent_id
+    pub async fn get_effective_agent_id(&self, session_id: Uuid) -> Option<Uuid> {
+        let users = self.users.read().await;
+        if let Some(session) = users.get(&session_id) {
+            // If user has a working_agent_id set (SuperAdmin), use that
+            if let Some(working_id) = session.working_agent_id {
+                return Some(working_id);
+            }
+            // Otherwise use the regular agent_id
+            return session.agent_id;
+        }
+        None
+    }
+
+    /// Get the working agent ID for a session (SuperAdmin only)
+    #[allow(dead_code)]
+    pub async fn get_working_agent_id(&self, session_id: Uuid) -> Option<Uuid> {
+        let users = self.users.read().await;
+        users.get(&session_id).and_then(|s| s.working_agent_id)
+    }
+
+    /// Notify SuperAdmin users when their working agent goes offline
+    pub async fn notify_working_agent_offline(&self, agent_id: Uuid) {
+        let mut users = self.users.write().await;
+        for session in users.values_mut() {
+            if session.working_agent_id == Some(agent_id) {
+                // Clear the working agent
+                session.working_agent_id = None;
+                // Send notification
+                let msg = ServerToUserMessage::WorkingAgentCleared;
+                let _ = session.tx.send(msg).await;
             }
         }
     }

@@ -14,7 +14,7 @@
 ### 权限控制
 | Token 类型 | 权限范围 |
 |-----------|---------|
-| 超级管理员 | 管理所有 Agent，强制断开、删除 Agent，查看全局统计 |
+| 超级管理员 | 管理所有 Agent，选择任意 Agent 管理其实例，强制断开/删除 Agent，查看全局统计和审计日志 |
 | Admin Token | 创建/关闭实例、选择目录、操作终端 |
 | Share Token | 查看和操作现有实例（只读权限） |
 
@@ -171,6 +171,7 @@ super_admin_token = "your-super-secret-token-at-least-32-chars"
 
 **权限**：
 - ✅ 查看所有在线 Agent 和实例
+- ✅ **选择任意 Agent 进行实例管理**（创建/关闭实例、操作终端）
 - ✅ 强制断开任意 Agent
 - ✅ 强制关闭任意实例
 - ✅ 删除 Agent 记录
@@ -179,6 +180,13 @@ super_admin_token = "your-super-secret-token-at-least-32-chars"
 - ✅ 管理 Agent 标签
 
 **使用场景**：系统运维管理员，需要全局管控能力。
+
+**工作流程**：
+1. 使用 SuperAdmin Token 登录后自动进入 Admin Panel
+2. 在 Agent 列表中点击在线 Agent 的"选择"按钮
+3. 跳转到 Instances 页面，可创建/管理该 Agent 的实例
+4. 页面顶部显示当前管理的 Agent 名称
+5. 点击"返回 Agent 列表"可切换到其他 Agent
 
 ---
 
@@ -642,6 +650,8 @@ launchctl unload ~/Library/LaunchAgents/com.claude-tunnel.agent.plist
 | `force_disconnect_agent` | SuperAdmin 强制断开 Agent |
 | `force_close_instance` | SuperAdmin 强制关闭实例 |
 | `delete_agent` | SuperAdmin 删除 Agent |
+| `select_working_agent` | SuperAdmin 选择工作 Agent |
+| `clear_working_agent` | SuperAdmin 清除工作 Agent |
 | `add_agent_tag` / `remove_agent_tag` | 标签操作 |
 
 审计日志存储在数据库的 `audit_logs` 表中，系统每小时自动清理超过保留期限的记录。

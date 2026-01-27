@@ -228,19 +228,19 @@ async fn handle_user_message(
                 return Err(anyhow::anyhow!("Permission denied: cannot create instance"));
             }
 
-            let agent_id = agent_id.ok_or_else(|| {
-                anyhow::anyhow!("No agent associated with session")
-            })?;
+            // Use effective agent ID (supports SuperAdmin working agent)
+            let effective_agent_id = state.get_effective_agent_id(session_id).await
+                .ok_or_else(|| anyhow::anyhow!("No agent associated with session. SuperAdmin must select a working agent first."))?;
 
             let instance_id = Uuid::new_v4();
-            info!("User {} requesting instance creation in {}", session_id, cwd);
+            info!("User {} requesting instance creation in {} on agent {}", session_id, cwd, effective_agent_id);
 
             // Log create instance event
             state.log_audit_event(
                 "create_instance",
                 session_id,
                 &role_str,
-                Some(agent_id),
+                Some(effective_agent_id),
                 Some(instance_id),
                 None,
                 client_ip,
@@ -253,25 +253,25 @@ async fn handle_user_message(
                 instance_id,
                 cwd,
             };
-            state.send_to_agent(agent_id, cmd).await?;
+            state.send_to_agent(effective_agent_id, cmd).await?;
         }
         UserMessage::CloseInstance { instance_id } => {
             if !role.can_close_instance() {
                 return Err(anyhow::anyhow!("Permission denied: cannot close instance"));
             }
 
-            let agent_id = agent_id.ok_or_else(|| {
-                anyhow::anyhow!("No agent associated with session")
-            })?;
+            // Use effective agent ID (supports SuperAdmin working agent)
+            let effective_agent_id = state.get_effective_agent_id(session_id).await
+                .ok_or_else(|| anyhow::anyhow!("No agent associated with session. SuperAdmin must select a working agent first."))?;
 
-            info!("User {} requesting to close instance {}", session_id, instance_id);
+            info!("User {} requesting to close instance {} on agent {}", session_id, instance_id, effective_agent_id);
 
             // Log close instance event
             state.log_audit_event(
                 "close_instance",
                 session_id,
                 &role_str,
-                Some(agent_id),
+                Some(effective_agent_id),
                 Some(instance_id),
                 None,
                 client_ip,
@@ -281,7 +281,7 @@ async fn handle_user_message(
 
             // Send close command to agent
             let cmd = ServerToAgentMessage::CloseInstance { instance_id };
-            state.send_to_agent(agent_id, cmd).await?;
+            state.send_to_agent(effective_agent_id, cmd).await?;
         }
         UserMessage::Attach { instance_id } => {
             info!("User {} attaching to instance {}", session_id, instance_id);
@@ -346,24 +346,32 @@ async fn handle_user_message(
         }
         UserMessage::PtyInput { instance_id, data } => {
             // Find the agent for this instance and forward
-            if let Some(aid) = agent_id {
+            // Use effective agent ID (supports SuperAdmin working agent)
+            if let Some(effective_agent_id) = state.get_effective_agent_id(session_id).await {
                 let cmd = ServerToAgentMessage::PtyInput { instance_id, data };
-                state.send_to_agent(aid, cmd).await?;
+                state.send_to_agent(effective_agent_id, cmd).await?;
             }
         }
         UserMessage::Resize { instance_id, size } => {
-            if let Some(aid) = agent_id {
+            // Use effective agent ID (supports SuperAdmin working agent)
+            if let Some(effective_agent_id) = state.get_effective_agent_id(session_id).await {
                 let cmd = ServerToAgentMessage::Resize { instance_id, size };
-                state.send_to_agent(aid, cmd).await?;
+                state.send_to_agent(effective_agent_id, cmd).await?;
             }
         }
         UserMessage::ListInstances => {
-            if let Some(aid) = agent_id {
-                let instances = state.get_instances(aid).await;
+            // Use effective agent ID (supports SuperAdmin working agent)
+            if let Some(effective_agent_id) = state.get_effective_agent_id(session_id).await {
+                let instances = state.get_instances(effective_agent_id).await;
                 debug!("User {} requested instance list: {} instances", session_id, instances.len());
 
                 // Send instance list back to user
                 let msg = ServerToUserMessage::InstanceList { instances };
+                state.send_to_user(session_id, msg).await?;
+            } else {
+                // SuperAdmin without working agent - send empty list
+                debug!("User {} requested instance list but no agent selected", session_id);
+                let msg = ServerToUserMessage::InstanceList { instances: vec![] };
                 state.send_to_user(session_id, msg).await?;
             }
         }
@@ -559,6 +567,95 @@ async fn handle_user_message(
                 .await?;
 
             let msg = ServerToUserMessage::AuditLogList { logs, total };
+            state.send_to_user(session_id, msg).await?;
+        }
+        // ====================================================================
+        // Working Agent commands (SuperAdmin only)
+        // ====================================================================
+        UserMessage::SelectWorkingAgent { agent_id: target_agent_id } => {
+            if !role.can_manage_all_agents() {
+                return Err(anyhow::anyhow!("Permission denied: not a super admin"));
+            }
+
+            info!("SuperAdmin {} selecting working agent {}", session_id, target_agent_id);
+
+            // Check if agent exists and is online
+            let agent = state.get_agent(target_agent_id).await;
+            if let Some(agent_info) = agent {
+                // Set the working agent
+                state.set_working_agent(session_id, target_agent_id).await;
+
+                // Log the event
+                state.log_audit_event(
+                    "select_working_agent",
+                    session_id,
+                    &role_str,
+                    Some(target_agent_id),
+                    None,
+                    None,
+                    client_ip,
+                    true,
+                    Some(&format!("agent_name: {}", agent_info.name)),
+                );
+
+                // Send success response with instance list
+                let msg = ServerToUserMessage::WorkingAgentSelected {
+                    agent_id: target_agent_id,
+                    agent_name: agent_info.name,
+                    success: true,
+                    error: None,
+                };
+                state.send_to_user(session_id, msg).await?;
+
+                // Send the instance list for this agent
+                let instances = state.get_instances(target_agent_id).await;
+                let list_msg = ServerToUserMessage::InstanceList { instances };
+                state.send_to_user(session_id, list_msg).await?;
+            } else {
+                // Agent not found or offline
+                let msg = ServerToUserMessage::WorkingAgentSelected {
+                    agent_id: target_agent_id,
+                    agent_name: String::new(),
+                    success: false,
+                    error: Some("Agent not found or offline".to_string()),
+                };
+                state.send_to_user(session_id, msg).await?;
+            }
+        }
+        UserMessage::ClearWorkingAgent => {
+            if !role.can_manage_all_agents() {
+                return Err(anyhow::anyhow!("Permission denied: not a super admin"));
+            }
+
+            info!("SuperAdmin {} clearing working agent", session_id);
+
+            state.clear_working_agent(session_id).await;
+
+            // Log the event
+            state.log_audit_event(
+                "clear_working_agent",
+                session_id,
+                &role_str,
+                None,
+                None,
+                None,
+                client_ip,
+                true,
+                None,
+            );
+
+            let msg = ServerToUserMessage::WorkingAgentCleared;
+            state.send_to_user(session_id, msg).await?;
+        }
+        UserMessage::ListAgentInstances { agent_id: target_agent_id } => {
+            if !role.can_manage_all_agents() {
+                return Err(anyhow::anyhow!("Permission denied: not a super admin"));
+            }
+
+            debug!("SuperAdmin {} requesting instances for agent {}", session_id, target_agent_id);
+
+            let instances = state.get_instances(target_agent_id).await;
+            let msg = ServerToUserMessage::InstanceList { instances };
             state.send_to_user(session_id, msg).await?;
         }
     }

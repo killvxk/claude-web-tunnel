@@ -10,6 +10,9 @@ export interface AdminState {
   stats: GlobalStats | null;
   loading: boolean;
   selectedAgentId: string | null;
+  // Working agent state for SuperAdmin
+  workingAgentId: string | null;
+  workingAgentName: string | null;
 }
 
 function createAdminStore() {
@@ -18,6 +21,8 @@ function createAdminStore() {
     stats: null,
     loading: false,
     selectedAgentId: null,
+    workingAgentId: null,
+    workingAgentName: null,
   };
 
   const { subscribe, set, update } = writable<AdminState>(initial);
@@ -39,6 +44,9 @@ function createAdminStore() {
       ...state,
       agents: state.agents.filter(a => a.id !== agentId),
       selectedAgentId: state.selectedAgentId === agentId ? null : state.selectedAgentId,
+      // Clear working agent if it's the removed one
+      workingAgentId: state.workingAgentId === agentId ? null : state.workingAgentId,
+      workingAgentName: state.workingAgentId === agentId ? null : state.workingAgentName,
       stats: state.stats ? {
         ...state.stats,
         total_agents: state.stats.total_agents - 1,
@@ -58,6 +66,17 @@ function createAdminStore() {
           ? state.stats.online_agents + 1
           : state.stats.online_agents - 1,
       } : null,
+    })),
+    // Working agent methods
+    setWorkingAgent: (agentId: string, agentName: string) => update(state => ({
+      ...state,
+      workingAgentId: agentId,
+      workingAgentName: agentName,
+    })),
+    clearWorkingAgent: () => update(state => ({
+      ...state,
+      workingAgentId: null,
+      workingAgentName: null,
     })),
     reset: () => set(initial),
   };
