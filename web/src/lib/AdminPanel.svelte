@@ -108,7 +108,7 @@
           </svg>
         </button>
         <div>
-          <h1 class="text-lg font-semibold text-theme-primary">Super Admin Panel</h1>
+          <h1 class="text-lg font-semibold text-theme-primary">超级管理员面板</h1>
           <p class="text-xs text-theme-secondary">系统管理控制台</p>
         </div>
       </div>
@@ -118,7 +118,7 @@
         <button
           onclick={() => showAuditLogs = true}
           class="p-2 text-theme-secondary hover:text-theme-primary hover:bg-theme-hover rounded-lg transition-colors"
-          title="Audit Logs"
+          title="审计日志"
         >
           <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
@@ -174,45 +174,45 @@
       <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
         <!-- Total Agents -->
         <div class="bg-theme-secondary rounded-lg p-3 border border-theme">
-          <div class="text-xs text-theme-secondary mb-1">Agents</div>
+          <div class="text-xs text-theme-secondary mb-1">代理总数</div>
           <div class="text-2xl font-bold text-theme-primary">{$admin.stats.total_agents}</div>
-          <div class="text-xs text-green-400">{$admin.stats.online_agents} online</div>
+          <div class="text-xs text-green-400">{$admin.stats.online_agents} 在线</div>
         </div>
 
         <!-- Total Instances -->
         <div class="bg-theme-secondary rounded-lg p-3 border border-theme">
-          <div class="text-xs text-theme-secondary mb-1">Instances</div>
+          <div class="text-xs text-theme-secondary mb-1">实例总数</div>
           <div class="text-2xl font-bold text-theme-primary">{$admin.stats.total_instances}</div>
-          <div class="text-xs text-green-400">{$admin.stats.running_instances} running</div>
+          <div class="text-xs text-green-400">{$admin.stats.running_instances} 运行中</div>
         </div>
 
         <!-- Total Users -->
         <div class="bg-theme-secondary rounded-lg p-3 border border-theme">
-          <div class="text-xs text-theme-secondary mb-1">Users</div>
+          <div class="text-xs text-theme-secondary mb-1">用户总数</div>
           <div class="text-2xl font-bold text-theme-primary">{$admin.stats.total_users}</div>
-          <div class="text-xs text-theme-secondary">connected</div>
+          <div class="text-xs text-theme-secondary">已连接</div>
         </div>
 
         <!-- Online Rate -->
         <div class="bg-theme-secondary rounded-lg p-3 border border-theme hidden sm:block">
-          <div class="text-xs text-theme-secondary mb-1">Online Rate</div>
+          <div class="text-xs text-theme-secondary mb-1">在线率</div>
           <div class="text-2xl font-bold text-theme-primary">
             {$admin.stats.total_agents > 0
               ? Math.round(($admin.stats.online_agents / $admin.stats.total_agents) * 100)
               : 0}%
           </div>
-          <div class="text-xs text-theme-secondary">agents online</div>
+          <div class="text-xs text-theme-secondary">代理在线比例</div>
         </div>
 
         <!-- Instance Rate -->
         <div class="bg-theme-secondary rounded-lg p-3 border border-theme hidden lg:block">
-          <div class="text-xs text-theme-secondary mb-1">Running Rate</div>
+          <div class="text-xs text-theme-secondary mb-1">运行率</div>
           <div class="text-2xl font-bold text-theme-primary">
             {$admin.stats.total_instances > 0
               ? Math.round(($admin.stats.running_instances / $admin.stats.total_instances) * 100)
               : 0}%
           </div>
-          <div class="text-xs text-theme-secondary">instances running</div>
+          <div class="text-xs text-theme-secondary">实例运行比例</div>
         </div>
       </div>
     </div>
@@ -224,7 +224,7 @@
       <input
         type="text"
         bind:value={searchQuery}
-        placeholder="Search agents..."
+        placeholder="搜索代理..."
         class="w-full pl-10 pr-4 py-2 bg-theme-secondary border border-theme rounded-lg text-sm text-theme-primary placeholder-theme-secondary focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
       />
       <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-theme-secondary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -241,7 +241,7 @@
           <svg class="w-12 h-12 mx-auto mb-4 text-theme-secondary animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
           </svg>
-          <p class="text-theme-secondary">Loading...</p>
+          <p class="text-theme-secondary">加载中...</p>
         </div>
       </div>
     {:else if filteredAgents.length === 0}
@@ -251,10 +251,10 @@
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
           </svg>
           <p class="text-theme-secondary text-lg mb-2">
-            {searchQuery ? 'No matching agents' : 'No agents registered'}
+            {searchQuery ? '没有匹配的代理' : '暂无注册的代理'}
           </p>
           <p class="text-theme-secondary text-sm">
-            {searchQuery ? 'Try a different search term' : 'Agents will appear here when they connect'}
+            {searchQuery ? '尝试其他搜索词' : '代理连接后将显示在此处'}
           </p>
         </div>
       </div>
@@ -270,7 +270,7 @@
                   <span class="w-2 h-2 rounded-full {agent.status === 'online' ? 'bg-green-500' : 'bg-gray-500'}"></span>
                   <h3 class="font-medium text-theme-primary truncate">{agent.name}</h3>
                   <span class="text-xs px-2 py-0.5 rounded-full {agent.status === 'online' ? 'bg-green-900/50 text-green-400' : 'bg-gray-700 text-gray-400'}">
-                    {agent.status}
+                    {agent.status === 'online' ? '在线' : '离线'}
                   </span>
                 </div>
                 <div class="text-xs text-theme-secondary font-mono truncate mb-2">{agent.id}</div>
@@ -279,13 +279,13 @@
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
                     </svg>
-                    {agent.instance_count} instances
+                    {agent.instance_count} 个实例
                   </span>
                   <span class="flex items-center gap-1">
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
                     </svg>
-                    {agent.user_count} users
+                    {agent.user_count} 个用户
                   </span>
                   <span class="flex items-center gap-1">
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -317,7 +317,7 @@
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
                     </svg>
-                    <span class="hidden sm:inline">Disconnect</span>
+                    <span class="hidden sm:inline">断开</span>
                   </button>
                 {/if}
                 <button
@@ -328,7 +328,7 @@
                   <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                   </svg>
-                  <span class="hidden sm:inline">Delete</span>
+                  <span class="hidden sm:inline">删除</span>
                 </button>
               </div>
             </div>
@@ -344,7 +344,7 @@
   <div class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
     <div class="bg-theme-secondary rounded-lg border border-theme p-6 max-w-md w-full">
       <h3 class="text-lg font-semibold text-theme-primary mb-2">
-        {confirmAction.type === 'disconnect' ? 'Force Disconnect Agent' : 'Delete Agent'}
+        {confirmAction.type === 'disconnect' ? '强制断开代理' : '删除代理'}
       </h3>
       <p class="text-theme-secondary mb-4">
         {#if confirmAction.type === 'disconnect'}

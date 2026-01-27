@@ -29,6 +29,14 @@ rand = { workspace = true }
 base64 = { workspace = true }
 hostname = "0.4"
 
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.59", features = [
+    "Win32_Foundation",
+    "Win32_System_Threading",
+    "Win32_System_Console",
+    "Win32_Security"
+] }
+
 [target.'cfg(target_env = "musl")'.dependencies]
 mimalloc = { workspace = true }
 openssl = { workspace = true }

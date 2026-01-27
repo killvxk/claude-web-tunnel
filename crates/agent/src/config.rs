@@ -7,7 +7,7 @@ use uuid::Uuid;
 
 use common::{
     AgentConfig, AgentIdentityConfig, DirectoryConfig, LoggingConfig, ServerConnectionConfig,
-    TokenConfig,
+    TerminalConfig, TokenConfig,
 };
 
 use crate::cli::Args;
@@ -69,12 +69,12 @@ impl AgentRuntime {
             .tokens
             .admin
             .clone()
-            .unwrap_or_else(|| generate_token());
+            .unwrap_or_else(generate_token);
         let share_token = config
             .tokens
             .share
             .clone()
-            .unwrap_or_else(|| generate_token());
+            .unwrap_or_else(generate_token);
 
         // Update config with resolved values
         config.agent.id = Some(agent_id.to_string());
@@ -122,6 +122,7 @@ impl AgentRuntime {
                 file: Some(std::path::PathBuf::from("./logs/agent.log")),
                 rotation: "daily".to_string(),
             },
+            terminal: TerminalConfig::default(),
         }
     }
 }

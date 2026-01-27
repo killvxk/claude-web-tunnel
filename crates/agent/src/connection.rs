@@ -14,6 +14,7 @@ use common::{AgentMessage, ExistingInstance, ServerToAgentMessage};
 
 use crate::config::AgentRuntime;
 use crate::instance::InstanceManager;
+use crate::pty::PtyMode;
 
 /// Tunnel connection handler
 pub struct TunnelConnection {
@@ -26,9 +27,17 @@ pub struct TunnelConnection {
 impl TunnelConnection {
     /// Create a new tunnel connection
     pub fn new(runtime: AgentRuntime) -> Self {
+        // Determine PTY mode from configuration
+        let pty_mode = if runtime.config.terminal.visible {
+            info!("Terminal visible mode enabled - instances will show local console window");
+            PtyMode::Visible
+        } else {
+            PtyMode::Background
+        };
+
         Self {
             runtime,
-            instances: Arc::new(tokio::sync::Mutex::new(InstanceManager::new())),
+            instances: Arc::new(tokio::sync::Mutex::new(InstanceManager::with_mode(pty_mode))),
         }
     }
 
@@ -37,10 +46,10 @@ impl TunnelConnection {
     fn build_ws_url(url: &str) -> Result<String> {
         let trimmed = url.trim_end_matches('/');
 
-        let ws_url = if trimmed.starts_with("https://") {
-            format!("wss://{}/ws/agent", &trimmed[8..])
-        } else if trimmed.starts_with("http://") {
-            format!("ws://{}/ws/agent", &trimmed[7..])
+        let ws_url = if let Some(stripped) = trimmed.strip_prefix("https://") {
+            format!("wss://{}/ws/agent", stripped)
+        } else if let Some(stripped) = trimmed.strip_prefix("http://") {
+            format!("ws://{}/ws/agent", stripped)
         } else if trimmed.starts_with("wss://") || trimmed.starts_with("ws://") {
             // Already a WebSocket URL
             format!("{}/ws/agent", trimmed)
@@ -293,7 +302,7 @@ impl TunnelConnection {
                 }
             }
             ServerToAgentMessage::Resize { instance_id, size } => {
-                debug!("Resizing instance {} to {}x{}", instance_id, size.cols, size.rows);
+                info!("Resizing instance {} to {}x{}", instance_id, size.cols, size.rows);
                 let instances = self.instances.lock().await;
                 if let Err(e) = instances.resize_instance(instance_id, size.cols, size.rows).await {
                     warn!("Failed to resize instance {}: {}", instance_id, e);

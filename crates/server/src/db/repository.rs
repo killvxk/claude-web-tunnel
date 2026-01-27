@@ -488,25 +488,58 @@ impl AgentRepository {
         };
 
         // Get records with pagination
+        // Use IFNULL to convert NULL to empty string for SQLite compatibility with SQLx
         let query = format!(
-            "SELECT id, timestamp, event_type, session_id, user_role, agent_id, instance_id, target_id, client_ip, success, details FROM audit_logs {} ORDER BY timestamp DESC LIMIT ? OFFSET ?",
+            "SELECT id, timestamp, event_type, session_id, user_role, \
+             IFNULL(agent_id, '') as agent_id, \
+             IFNULL(instance_id, '') as instance_id, \
+             IFNULL(target_id, '') as target_id, \
+             client_ip, success, \
+             IFNULL(details, '') as details \
+             FROM audit_logs {} ORDER BY timestamp DESC LIMIT ? OFFSET ?",
             where_clause
         );
 
-        let records = if let Some(et) = event_type {
-            sqlx::query_as::<_, AuditLogRecord>(&query)
+        let rows = if let Some(et) = event_type {
+            sqlx::query(&query)
                 .bind(et)
                 .bind(limit)
                 .bind(offset)
                 .fetch_all(&self.pool)
                 .await?
         } else {
-            sqlx::query_as::<_, AuditLogRecord>(&query)
+            sqlx::query(&query)
                 .bind(limit)
                 .bind(offset)
                 .fetch_all(&self.pool)
                 .await?
         };
+
+        // Manually build records to handle empty strings as None
+        use sqlx::Row;
+        let records: Vec<AuditLogRecord> = rows
+            .into_iter()
+            .map(|row| {
+                let agent_id: String = row.get("agent_id");
+                let instance_id: String = row.get("instance_id");
+                let target_id: String = row.get("target_id");
+                let details: String = row.get("details");
+
+                AuditLogRecord {
+                    id: row.get("id"),
+                    timestamp: row.get("timestamp"),
+                    event_type: row.get("event_type"),
+                    session_id: row.get("session_id"),
+                    user_role: row.get("user_role"),
+                    agent_id: if agent_id.is_empty() { None } else { Some(agent_id) },
+                    instance_id: if instance_id.is_empty() { None } else { Some(instance_id) },
+                    target_id: if target_id.is_empty() { None } else { Some(target_id) },
+                    client_ip: row.get("client_ip"),
+                    success: row.get("success"),
+                    details: if details.is_empty() { None } else { Some(details) },
+                }
+            })
+            .collect();
 
         Ok((records, total.0 as u64))
     }

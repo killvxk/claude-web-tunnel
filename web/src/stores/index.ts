@@ -40,33 +40,55 @@ function createAdminStore() {
       ...state,
       selectedAgentId: agentId,
     })),
-    removeAgent: (agentId: string) => update(state => ({
-      ...state,
-      agents: state.agents.filter(a => a.id !== agentId),
-      selectedAgentId: state.selectedAgentId === agentId ? null : state.selectedAgentId,
-      // Clear working agent if it's the removed one
-      workingAgentId: state.workingAgentId === agentId ? null : state.workingAgentId,
-      workingAgentName: state.workingAgentId === agentId ? null : state.workingAgentName,
-      stats: state.stats ? {
-        ...state.stats,
-        total_agents: state.stats.total_agents - 1,
-        online_agents: state.agents.find(a => a.id === agentId)?.status === 'online'
-          ? state.stats.online_agents - 1
-          : state.stats.online_agents,
-      } : null,
-    })),
-    updateAgentStatus: (agentId: string, online: boolean) => update(state => ({
-      ...state,
-      agents: state.agents.map(a =>
-        a.id === agentId ? { ...a, status: online ? 'online' : 'offline' } : a
-      ),
-      stats: state.stats ? {
-        ...state.stats,
-        online_agents: online
-          ? state.stats.online_agents + 1
-          : state.stats.online_agents - 1,
-      } : null,
-    })),
+    removeAgent: (agentId: string) => update(state => {
+      // 查找要删除的agent
+      const agentToRemove = state.agents.find(a => a.id === agentId);
+
+      // 如果agent不存在，不做任何改变
+      if (!agentToRemove) {
+        return state;
+      }
+
+      const wasOnline = agentToRemove.status === 'online';
+
+      return {
+        ...state,
+        agents: state.agents.filter(a => a.id !== agentId),
+        selectedAgentId: state.selectedAgentId === agentId ? null : state.selectedAgentId,
+        // Clear working agent if it's the removed one
+        workingAgentId: state.workingAgentId === agentId ? null : state.workingAgentId,
+        workingAgentName: state.workingAgentId === agentId ? null : state.workingAgentName,
+        stats: state.stats ? {
+          ...state.stats,
+          total_agents: state.stats.total_agents - 1,
+          online_agents: wasOnline
+            ? state.stats.online_agents - 1
+            : state.stats.online_agents,
+        } : null,
+      };
+    }),
+    updateAgentStatus: (agentId: string, online: boolean) => update(state => {
+      // 查找当前agent状态
+      const agent = state.agents.find(a => a.id === agentId);
+      const wasOnline = agent?.status === 'online';
+      const newStatus = online ? 'online' : 'offline';
+
+      // 只有状态真正改变时才更新计数
+      const statusChanged = agent && wasOnline !== online;
+
+      return {
+        ...state,
+        agents: state.agents.map(a =>
+          a.id === agentId ? { ...a, status: newStatus } : a
+        ),
+        stats: state.stats ? {
+          ...state.stats,
+          online_agents: statusChanged
+            ? (online ? state.stats.online_agents + 1 : state.stats.online_agents - 1)
+            : state.stats.online_agents,
+        } : null,
+      };
+    }),
     // Working agent methods
     setWorkingAgent: (agentId: string, agentName: string) => update(state => ({
       ...state,

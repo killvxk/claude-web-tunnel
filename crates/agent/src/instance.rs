@@ -8,7 +8,7 @@ use tokio::sync::{mpsc, Mutex};
 use tracing::{debug, info};
 use uuid::Uuid;
 
-use crate::pty::PtyInstance;
+use crate::pty::{PtyInstance, PtyMode};
 
 /// Information about an existing instance for reconnection sync
 #[derive(Debug, Clone)]
@@ -23,6 +23,8 @@ pub struct InstanceInfo {
 pub struct InstanceManager {
     /// Active instances (wrapped in Arc<Mutex> for shared mutable access)
     instances: HashMap<Uuid, Arc<Mutex<PtyInstance>>>,
+    /// Default PTY mode for new instances
+    default_mode: PtyMode,
 }
 
 impl InstanceManager {
@@ -30,15 +32,41 @@ impl InstanceManager {
     pub fn new() -> Self {
         Self {
             instances: HashMap::new(),
+            default_mode: PtyMode::Background,
         }
     }
 
-    /// Create a new Claude Code instance
+    /// Create a new instance manager with specified default mode
+    pub fn with_mode(mode: PtyMode) -> Self {
+        Self {
+            instances: HashMap::new(),
+            default_mode: mode,
+        }
+    }
+
+    /// Set the default PTY mode
+    #[allow(dead_code)]
+    pub fn set_default_mode(&mut self, mode: PtyMode) {
+        self.default_mode = mode;
+    }
+
+    /// Create a new Claude Code instance with default mode
     pub async fn create_instance(
         &mut self,
         id: Uuid,
         cwd: &str,
         output_tx: mpsc::Sender<(Uuid, Vec<u8>)>,
+    ) -> Result<()> {
+        self.create_instance_with_mode(id, cwd, output_tx, self.default_mode).await
+    }
+
+    /// Create a new Claude Code instance with specified mode
+    pub async fn create_instance_with_mode(
+        &mut self,
+        id: Uuid,
+        cwd: &str,
+        output_tx: mpsc::Sender<(Uuid, Vec<u8>)>,
+        mode: PtyMode,
     ) -> Result<()> {
         if self.instances.contains_key(&id) {
             return Err(anyhow!("Instance {} already exists", id));
@@ -53,10 +81,14 @@ impl InstanceManager {
             return Err(anyhow!("Path is not a directory: {}", cwd));
         }
 
-        let instance = PtyInstance::new(id, cwd, output_tx)?;
+        let instance = PtyInstance::new_with_mode(id, cwd, output_tx, mode)?;
         self.instances.insert(id, Arc::new(Mutex::new(instance)));
 
-        info!("Created instance {} in {}", id, cwd);
+        let mode_str = match mode {
+            PtyMode::Background => "background",
+            PtyMode::Visible => "visible",
+        };
+        info!("Created {} instance {} in {}", mode_str, id, cwd);
         Ok(())
     }
 
@@ -132,7 +164,7 @@ impl InstanceManager {
 
     /// Rebind output channels for all instances after reconnection
     pub async fn rebind_all_channels(&self, new_tx: mpsc::Sender<(Uuid, Vec<u8>)>) {
-        for (_id, instance) in &self.instances {
+        for instance in self.instances.values() {
             let inst = instance.lock().await;
             inst.rebind_output_channel(new_tx.clone()).await;
         }
@@ -141,7 +173,7 @@ impl InstanceManager {
 
     /// Mark all instances as disconnected (for buffering output)
     pub async fn set_all_disconnected(&self) {
-        for (_id, instance) in &self.instances {
+        for instance in self.instances.values() {
             let inst = instance.lock().await;
             inst.set_connected(false);
         }

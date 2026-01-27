@@ -18,6 +18,9 @@ pub struct AgentConfig {
     /// Logging settings
     #[serde(default)]
     pub logging: LoggingConfig,
+    /// Terminal settings
+    #[serde(default)]
+    pub terminal: TerminalConfig,
 }
 
 /// Server connection configuration for agent
@@ -101,6 +104,28 @@ impl Default for LoggingConfig {
             level: default_log_level(),
             file: None,
             rotation: default_log_rotation(),
+        }
+    }
+}
+
+/// Terminal configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TerminalConfig {
+    /// Show visible terminal window (dual-mode: local window + web interface)
+    /// When true, terminal runs in visible mode with input/output synchronized
+    /// When false, terminal runs in background mode (web-only)
+    #[serde(default = "default_terminal_visible")]
+    pub visible: bool,
+}
+
+fn default_terminal_visible() -> bool {
+    false
+}
+
+impl Default for TerminalConfig {
+    fn default() -> Self {
+        Self {
+            visible: default_terminal_visible(),
         }
     }
 }

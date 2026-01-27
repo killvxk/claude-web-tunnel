@@ -107,15 +107,19 @@ pub struct AuditLogRecord {
     /// User role (super_admin, admin, user)
     pub user_role: String,
     /// Associated agent ID (optional)
+    #[sqlx(default)]
     pub agent_id: Option<String>,
     /// Associated instance ID (optional)
+    #[sqlx(default)]
     pub instance_id: Option<String>,
     /// Target ID for operations like DeleteAgent (optional)
+    #[sqlx(default)]
     pub target_id: Option<String>,
     /// Client IP address
     pub client_ip: String,
     /// Operation success (1) or failure (0)
     pub success: i32,
     /// Additional details in JSON format (optional)
+    #[sqlx(default)]
     pub details: Option<String>,
 }
