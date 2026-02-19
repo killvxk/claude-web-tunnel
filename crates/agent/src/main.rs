@@ -42,8 +42,8 @@ async fn main() -> Result<()> {
         runtime.agent_id
     );
     info!("Server: {}", runtime.config.server.url);
-    info!("Admin Token: {}", &runtime.admin_token);
-    info!("Share Token: {}", &runtime.share_token);
+    info!("Admin Token: {}...", &runtime.admin_token[..std::cmp::min(8, runtime.admin_token.len())]);
+    info!("Share Token: {}...", &runtime.share_token[..std::cmp::min(8, runtime.share_token.len())]);
 
     // Start the tunnel connection
     let mut connection = TunnelConnection::new(runtime);

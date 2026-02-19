@@ -33,7 +33,6 @@ pub struct UserSession {
     #[allow(dead_code)]
     pub id: Uuid,
     /// User role
-    #[allow(dead_code)]
     pub role: Role,
     /// Associated agent ID (None for super admin viewing all)
     pub agent_id: Option<Uuid>,
@@ -53,12 +52,22 @@ pub struct AppState {
     pub agent_repo: AgentRepository,
     /// Rate limiter (optional)
     pub rate_limiter: Option<RateLimiter>,
+    /// Pre-computed SHA-256 hash of super_admin_token
+    super_admin_token_hash: String,
+    /// Token hash -> (agent_id, role) index for O(1) authentication
+    token_index: RwLock<HashMap<String, (Uuid, Role)>>,
     /// Connected agents (agent_id -> ConnectedAgent)
     pub agents: RwLock<HashMap<Uuid, ConnectedAgent>>,
     /// Connected users (session_id -> UserSession)
     pub users: RwLock<HashMap<Uuid, UserSession>>,
+    /// PTY output buffer for batching database writes
+    pty_buffer: RwLock<HashMap<Uuid, Vec<u8>>>,
     /// Broadcast channel for agent status changes
     pub agent_status_tx: broadcast::Sender<(Uuid, bool)>,
+    /// Pre-computed SHA-256 hash of agent_secret (if configured)
+    pub agent_secret_hash: Option<String>,
+    /// Server start time
+    pub started_at: chrono::DateTime<chrono::Utc>,
 }
 
 impl AppState {
@@ -69,14 +78,21 @@ impl AppState {
         rate_limiter: Option<RateLimiter>,
     ) -> Result<Self> {
         let (agent_status_tx, _) = broadcast::channel(100);
+        let super_admin_token_hash = hash_token(&runtime.config.security.super_admin_token);
+        let agent_secret_hash = runtime.config.security.agent_secret.as_ref().map(|s| hash_token(s));
 
         Ok(Self {
             runtime,
             agent_repo,
             rate_limiter,
+            super_admin_token_hash,
+            agent_secret_hash,
+            token_index: RwLock::new(HashMap::new()),
             agents: RwLock::new(HashMap::new()),
             users: RwLock::new(HashMap::new()),
+            pty_buffer: RwLock::new(HashMap::new()),
             agent_status_tx,
+            started_at: chrono::Utc::now(),
         })
     }
 
@@ -111,6 +127,17 @@ impl AppState {
 
         let mut agents = self.agents.write().await;
         agents.insert(agent_id, connected);
+        drop(agents);
+
+        // Note: There's a brief window between dropping the agents lock and acquiring
+        // the token_index lock where authentication may fall back to the database path.
+        // This is functionally correct but slightly slower during this window.
+        // Update token index for O(1) authentication
+        {
+            let mut index = self.token_index.write().await;
+            index.insert(admin_token_hash.clone(), (agent_id, Role::Admin));
+            index.insert(share_token_hash.clone(), (agent_id, Role::User));
+        }
 
         // Persist to database (non-blocking, log errors)
         let repo = self.agent_repo.clone();
@@ -128,36 +155,40 @@ impl AppState {
     /// Unregister an agent
     pub async fn unregister_agent(&self, agent_id: Uuid) {
         let mut agents = self.agents.write().await;
-        agents.remove(&agent_id);
-
-        // Broadcast agent offline
-        let _ = self.agent_status_tx.send((agent_id, false));
+        if let Some(removed) = agents.remove(&agent_id) {
+            drop(agents);
+            // Note: There's a brief window between dropping the agents lock and acquiring
+            // the token_index lock where authentication may fall back to the database path.
+            // This is functionally correct but slightly slower during this window.
+            // Clean up token index
+            let mut index = self.token_index.write().await;
+            index.remove(&removed.admin_token_hash);
+            index.remove(&removed.share_token_hash);
+            drop(index);
+            // Broadcast agent offline only when actually removed
+            let _ = self.agent_status_tx.send((agent_id, false));
+        }
     }
 
     /// Authenticate a token and return role and agent ID
     /// Uses hashed token comparison for security
     pub async fn authenticate(&self, token: &str) -> Option<(Role, Option<Uuid>)> {
-        // Check super admin token (direct comparison for config-based token)
-        if token == self.runtime.config.security.super_admin_token {
+        let token_hash = hash_token(token);
+
+        // Check super admin token (hash comparison)
+        if token_hash == self.super_admin_token_hash {
             return Some((Role::SuperAdmin, None));
         }
 
-        let token_hash = hash_token(token);
-
-        // First check in-memory connected agents (fast path)
+        // O(1) lookup via token index for connected agents
         {
-            let agents = self.agents.read().await;
-            for (agent_id, agent) in agents.iter() {
-                if token_hash == agent.admin_token_hash {
-                    return Some((Role::Admin, Some(*agent_id)));
-                }
-                if token_hash == agent.share_token_hash {
-                    return Some((Role::User, Some(*agent_id)));
-                }
+            let index = self.token_index.read().await;
+            if let Some((agent_id, role)) = index.get(&token_hash) {
+                return Some((*role, Some(*agent_id)));
             }
         }
 
-        // Then check database for offline/registered agents
+        // Fallback: check database for offline/registered agents
         if let Ok(Some(record)) = self.agent_repo.find_by_admin_token(token).await {
             if let Ok(id) = record.id.parse::<Uuid>() {
                 return Some((Role::Admin, Some(id)));
@@ -180,17 +211,6 @@ impl AppState {
             agent.instances = a.instances.values().cloned().collect();
             agent
         })
-    }
-
-    /// Get all agents (for super admin, with instances populated)
-    #[allow(dead_code)]
-    pub async fn get_all_agents(&self) -> Vec<Agent> {
-        let agents = self.agents.read().await;
-        agents.values().map(|a| {
-            let mut agent = a.agent.clone();
-            agent.instances = a.instances.values().cloned().collect();
-            agent
-        }).collect()
     }
 
     /// Get instances for an agent
@@ -351,13 +371,6 @@ impl AppState {
         None
     }
 
-    /// Get the working agent ID for a session (SuperAdmin only)
-    #[allow(dead_code)]
-    pub async fn get_working_agent_id(&self, session_id: Uuid) -> Option<Uuid> {
-        let users = self.users.read().await;
-        users.get(&session_id).and_then(|s| s.working_agent_id)
-    }
-
     /// Notify SuperAdmin users when their working agent goes offline
     pub async fn notify_working_agent_offline(&self, agent_id: Uuid) {
         let mut users = self.users.write().await;
@@ -376,8 +389,14 @@ impl AppState {
     pub async fn update_agent_instances_status(&self, agent_id: Uuid, status: InstanceStatus) {
         let mut agents = self.agents.write().await;
         if let Some(agent) = agents.get_mut(&agent_id) {
+            let now = chrono::Utc::now();
             for instance in agent.instances.values_mut() {
                 instance.status = status.clone();
+                if status == InstanceStatus::Suspended {
+                    instance.suspended_at = Some(now);
+                } else {
+                    instance.suspended_at = None;
+                }
             }
         }
     }
@@ -391,6 +410,7 @@ impl AppState {
             if let Some(instance) = agent.instances.get_mut(&instance_id) {
                 if instance.status == InstanceStatus::Suspended {
                     instance.status = InstanceStatus::Running;
+                    instance.suspended_at = None;
                     tracing::info!("Restored instance {} to Running status", instance_id);
                     return true;
                 }
@@ -413,7 +433,10 @@ impl AppState {
             for (instance_id, instance) in agent.instances.iter() {
                 if instance.status == InstanceStatus::Suspended {
                     // Check if instance has been suspended for too long
-                    if now.signed_duration_since(instance.created_at) > timeout_duration {
+                    if instance.suspended_at
+                        .map(|t| now.signed_duration_since(t) > timeout_duration)
+                        .unwrap_or(false)
+                    {
                         to_remove.push(*instance_id);
                     }
                 }
@@ -486,9 +509,15 @@ impl AppState {
     pub async fn force_disconnect_agent(&self, agent_id: Uuid) -> Result<()> {
         // Remove agent from memory
         let mut agents = self.agents.write().await;
-        if agents.remove(&agent_id).is_some() {
+        if let Some(removed) = agents.remove(&agent_id) {
+            drop(agents); // Release lock before other operations
+            // Clean up token index
+            {
+                let mut index = self.token_index.write().await;
+                index.remove(&removed.admin_token_hash);
+                index.remove(&removed.share_token_hash);
+            }
             // Broadcast agent offline
-            drop(agents); // Release lock before broadcasting
             let _ = self.agent_status_tx.send((agent_id, false));
             Ok(())
         } else {
@@ -501,7 +530,13 @@ impl AppState {
         // Remove from memory first
         {
             let mut agents = self.agents.write().await;
-            agents.remove(&agent_id);
+            if let Some(removed) = agents.remove(&agent_id) {
+                drop(agents);
+                // Clean up token index
+                let mut index = self.token_index.write().await;
+                index.remove(&removed.admin_token_hash);
+                index.remove(&removed.share_token_hash);
+            }
         }
 
         // Delete from database
@@ -546,8 +581,10 @@ impl AppState {
     pub async fn broadcast_to_admins(&self, msg: ServerToUserMessage) {
         let users = self.users.read().await;
         for session in users.values() {
-            // Send to all users that can create instances (Admin or SuperAdmin)
-            let _ = session.tx.send(msg.clone()).await;
+            // Only send to SuperAdmin or Admin role users, not regular Users
+            if session.role == Role::SuperAdmin || session.role == Role::Admin {
+                let _ = session.tx.send(msg.clone()).await;
+            }
         }
     }
 
@@ -579,23 +616,73 @@ impl AppState {
     // Terminal history operations
     // ========================================================================
 
-    /// Save PTY output to terminal history (async, non-blocking)
+    /// Save PTY output to in-memory buffer (will be flushed periodically)
     pub async fn save_pty_output(&self, instance_id: Uuid, data: &str) {
         if !self.runtime.config.terminal_history.enabled {
             return;
         }
 
-        let byte_size = data.len() as i32;
-        let buffer_size_kb = self.runtime.config.terminal_history.default_buffer_size_kb as i32;
-        let repo = self.agent_repo.clone();
-        let data_owned = data.to_string();
+        let mut buffer = self.pty_buffer.write().await;
+        buffer
+            .entry(instance_id)
+            .or_default()
+            .extend_from_slice(data.as_bytes());
+    }
 
-        // Spawn non-blocking task to avoid slowing down real-time output
-        tokio::spawn(async move {
-            if let Err(e) = repo.save_terminal_history(instance_id, &data_owned, byte_size, buffer_size_kb).await {
-                tracing::warn!("Failed to save terminal history for instance {}: {}", instance_id, e);
+    /// Flush PTY buffer for a specific instance to database
+    pub async fn flush_pty_buffer_for_instance(&self, instance_id: Uuid) {
+        if !self.runtime.config.terminal_history.enabled {
+            return;
+        }
+
+        let data = {
+            let mut buffer = self.pty_buffer.write().await;
+            buffer.remove(&instance_id)
+        };
+
+        if let Some(bytes) = data {
+            if bytes.is_empty() {
+                return;
             }
-        });
+            let data_str = String::from_utf8_lossy(&bytes).to_string();
+            let byte_size = bytes.len() as i32;
+            let buffer_size_kb = self.runtime.config.terminal_history.default_buffer_size_kb as i32;
+            if let Err(e) = self.agent_repo.save_terminal_history(instance_id, &data_str, byte_size, buffer_size_kb).await {
+                tracing::warn!("Failed to flush PTY buffer for instance {}: {}, re-buffering", instance_id, e);
+                // Put data back into buffer on failure, prepending before any new data
+                let mut buffer = self.pty_buffer.write().await;
+                let entry = buffer.entry(instance_id).or_default();
+                entry.splice(0..0, bytes);
+            }
+        }
+    }
+
+    /// Flush all PTY buffers to database (called periodically)
+    pub async fn flush_all_pty_buffers(&self) {
+        if !self.runtime.config.terminal_history.enabled {
+            return;
+        }
+
+        let entries: Vec<(Uuid, Vec<u8>)> = {
+            let mut buffer = self.pty_buffer.write().await;
+            buffer.drain().collect()
+        };
+
+        let buffer_size_kb = self.runtime.config.terminal_history.default_buffer_size_kb as i32;
+        for (instance_id, bytes) in entries {
+            if bytes.is_empty() {
+                continue;
+            }
+            let data_str = String::from_utf8_lossy(&bytes).to_string();
+            let byte_size = bytes.len() as i32;
+            if let Err(e) = self.agent_repo.save_terminal_history(instance_id, &data_str, byte_size, buffer_size_kb).await {
+                tracing::warn!("Failed to flush PTY buffer for instance {}: {}, re-buffering", instance_id, e);
+                // Put data back into buffer on failure, prepending before any new data
+                let mut buffer = self.pty_buffer.write().await;
+                let entry = buffer.entry(instance_id).or_default();
+                entry.splice(0..0, bytes);
+            }
+        }
     }
 
     /// Get terminal history for an instance
@@ -603,6 +690,9 @@ impl AppState {
         if !self.runtime.config.terminal_history.enabled {
             return Ok(Vec::new());
         }
+
+        // Flush buffer for this instance first so history is complete
+        self.flush_pty_buffer_for_instance(instance_id).await;
 
         let records = self.agent_repo.get_terminal_history(instance_id).await?;
 
@@ -617,6 +707,12 @@ impl AppState {
 
     /// Delete terminal history for an instance
     pub async fn delete_terminal_history(&self, instance_id: Uuid) {
+        // Clear the in-memory buffer
+        {
+            let mut buffer = self.pty_buffer.write().await;
+            buffer.remove(&instance_id);
+        }
+
         let repo = self.agent_repo.clone();
         tokio::spawn(async move {
             if let Err(e) = repo.delete_terminal_history(instance_id).await {

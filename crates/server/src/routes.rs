@@ -5,10 +5,12 @@ use std::sync::Arc;
 
 use axum::{
     extract::{ConnectInfo, State, WebSocketUpgrade},
+    http::HeaderMap,
     response::{Html, IntoResponse},
     routing::get,
-    Router,
+    Json, Router,
 };
+use serde_json::json;
 
 use crate::state::AppState;
 use crate::static_files::{has_web_assets, static_handler};
@@ -33,9 +35,25 @@ pub fn create_routes() -> Router<Arc<AppState>> {
     }
 }
 
-/// Health check endpoint
-async fn health_check() -> impl IntoResponse {
-    "OK"
+/// Health check endpoint with deep checks
+async fn health_check(State(state): State<Arc<AppState>>) -> impl IntoResponse {
+    let uptime = chrono::Utc::now()
+        .signed_duration_since(state.started_at)
+        .num_seconds();
+
+    // Check database connectivity
+    let db_status = match state.agent_repo.health_check().await {
+        Ok(_) => "ok",
+        Err(_) => "error",
+    };
+
+    let status = if db_status == "ok" { "ok" } else { "degraded" };
+
+    Json(json!({
+        "status": status,
+        "database": db_status,
+        "uptime_seconds": uptime
+    }))
 }
 
 /// Fallback index page when web frontend is not embedded
@@ -43,7 +61,24 @@ async fn fallback_index_handler() -> Html<&'static str> {
     Html(FALLBACK_HTML)
 }
 
+/// Validate WebSocket Origin header against allowed_origins config.
+/// Returns Ok(()) if valid, Err(response) if rejected.
+fn validate_origin(headers: &HeaderMap, state: &AppState) -> Result<(), axum::response::Response> {
+    let allowed = &state.runtime.config.server.allowed_origins;
+    if allowed.is_empty() {
+        return Ok(());
+    }
+    if let Some(origin) = headers.get("origin").and_then(|v| v.to_str().ok()) {
+        if allowed.iter().any(|a| a == origin) {
+            return Ok(());
+        }
+    }
+    Err((axum::http::StatusCode::FORBIDDEN, "Forbidden: origin not allowed").into_response())
+}
+
 /// WebSocket handler for agent connections
+/// Note: No Origin validation here — agents connect via tokio-tungstenite (not browsers)
+/// and are authenticated via agent_secret instead.
 async fn ws_agent_handler(
     ws: WebSocketUpgrade,
     State(state): State<Arc<AppState>>,
@@ -53,12 +88,17 @@ async fn ws_agent_handler(
 
 /// WebSocket handler for user connections
 async fn ws_user_handler(
+    headers: HeaderMap,
     ws: WebSocketUpgrade,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     State(state): State<Arc<AppState>>,
 ) -> impl IntoResponse {
+    if let Err(resp) = validate_origin(&headers, &state) {
+        return resp;
+    }
     let client_ip = addr.ip().to_string();
     ws.on_upgrade(move |socket| handle_user_connection(socket, state, client_ip))
+        .into_response()
 }
 
 /// Simple HTML fallback page (used when web frontend is not built)

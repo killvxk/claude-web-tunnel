@@ -10,6 +10,16 @@
 - **多人协作** - 团队成员可共享同一终端会话
 - **终端历史回放** - 断线重连后自动恢复之前的输出内容
 - **审计日志** - 记录用户操作，支持安全审计
+- **优雅关闭** - 服务器关闭时通知所有连接，确保数据完整性
+
+### 安全特性
+- **Agent 注册认证** - 可选的 `agent_secret` 防止未授权 Agent 接入
+- **Token Hash 存储** - 所有 Token 使用 SHA-256 Hash 比较，防止时序攻击
+- **O(1) Token 认证** - 内存索引实现常数时间认证，避免遍历泄露信息
+- **WebSocket Origin 验证** - 可配置 `allowed_origins` 防止跨站 WebSocket 劫持
+- **消息限速** - 认证后 mutation 操作限速（10次/分钟），防止滥用
+- **Redis 原子限速** - Lua 脚本保证 INCR+EXPIRE 原子性
+- **MySQL 兼容** - 完整支持 MySQL 和 SQLite 双数据库后端
 
 ### 权限控制
 | Token 类型 | 权限范围 |
@@ -104,6 +114,10 @@ share_token = "your-share-token"  # 分享 Token（自己设定，32+ 字符）
 url = "https://tunnel.example.com"  # 服务器地址（支持 http/https/ws/wss）
 reconnect_interval = 5              # 断线重连间隔（秒）
 heartbeat_interval = 30             # 心跳间隔（秒）
+# agent_secret = "shared-secret"   # Agent 注册密钥（可选，需与服务器配置一致）
+
+[terminal]
+visible = false                     # 终端显示模式（见下方说明）
 
 [logging]
 level = "info"
@@ -112,6 +126,17 @@ rotation = "daily"
 ```
 
 > **注意**：`admin_token` 和 `share_token` 由你自己设定，不是服务器生成的。每个 Agent 可以有不同的 Token。
+
+#### 终端显示模式
+
+| 模式 | 配置值 | 说明 |
+|------|--------|------|
+| 后台模式 | `visible = false` | 默认模式，终端在后台运行，仅通过 Web 界面操作 |
+| 可见模式 | `visible = true` | 本地弹出只读查看器窗口，实时显示终端内容，操作仍通过 Web 界面 |
+
+> **注意**：可见模式目前仅支持 Windows 系统。在其他系统上会自动回退到后台模式。
+>
+> **可见模式说明**：本地查看器窗口为**只读**，仅用于观察终端输出（调试/演示用途）。所有输入操作需通过 Web 界面进行。
 
 #### 2.3 启动 Agent
 
@@ -316,6 +341,7 @@ sudo nano /opt/claude-tunnel/config/server.toml
 [server]
 host = "127.0.0.1"    # Nginx 代理时用 127.0.0.1
 port = 8080
+# allowed_origins = ["https://tunnel.example.com"]  # CORS 允许的源（空=同源策略）
 
 [database]
 db_type = "sqlite"
@@ -326,6 +352,7 @@ sqlite_path = "/opt/claude-tunnel/data/tunnel.db"
 super_admin_token = "your-super-admin-token-here"  # 必须修改！
 rate_limit_per_minute = 10
 token_min_length = 32
+# agent_secret = "shared-secret-for-agent-auth"    # Agent 注册密钥（可选）
 
 [logging]
 level = "info"
@@ -423,7 +450,7 @@ sudo systemctl reload nginx
 # 检查服务状态
 sudo systemctl status claude-tunnel
 
-# 检查健康端点
+# 检查健康端点（返回 JSON: status, database, uptime_seconds）
 curl http://127.0.0.1:8080/health
 
 # 检查日志
@@ -442,7 +469,7 @@ claude-web-tunnel/
 │   │   ├── config.rs        # 配置类型定义
 │   │   ├── protocol.rs      # WebSocket 协议消息
 │   │   ├── types.rs         # 核心数据类型
-│   │   └── error.rs         # 错误类型
+│   │   └── error.rs         # 错误类型（保留模块）
 │   ├── agent/               # 本地 Agent CLI
 │   │   ├── connection.rs    # WebSocket 连接管理
 │   │   ├── pty.rs           # PTY 实例管理
@@ -520,6 +547,7 @@ cargo test --workspace
 [server]
 host = "127.0.0.1"          # 监听地址 (Nginx 代理时用 127.0.0.1，直连时用 0.0.0.0)
 port = 8080                 # 监听端口
+# allowed_origins = ["https://tunnel.example.com"]  # CORS 允许的源（空=同源策略）
 
 [database]
 db_type = "sqlite"          # 数据库类型: "sqlite" 或 "mysql"
@@ -531,6 +559,7 @@ sqlite_path = "./data/tunnel.db"
 super_admin_token = "YOUR_SECRET_TOKEN"  # 超级管理员 Token (必须修改!)
 rate_limit_per_minute = 10               # 每分钟最大认证尝试
 token_min_length = 32                    # Token 最小长度
+# agent_secret = "shared-secret"         # Agent 注册密钥（可选，配置后 Agent 必须提供匹配密钥才能注册）
 
 [logging]
 level = "info"              # 日志级别: trace/debug/info/warn/error
@@ -560,6 +589,7 @@ share_token = "your-share-token"  # 分享 Token
 url = "wss://tunnel.example.com"  # 服务器地址 (不含 /ws/agent 后缀)
 reconnect_interval = 5            # 重连间隔 (秒)
 heartbeat_interval = 30           # 心跳间隔 (秒)
+# agent_secret = "shared-secret"  # Agent 注册密钥（需与服务器配置一致）
 
 [logging]
 level = "info"
@@ -571,11 +601,11 @@ rotation = "daily"
 
 | 配置节 | 说明 |
 |-------|------|
-| `[server]` | HTTP 服务器监听配置 |
+| `[server]` | HTTP 服务器监听配置，包括 CORS 允许源 |
 | `[database]` | 数据库连接配置，支持 SQLite/MySQL + Redis |
-| `[security]` | 安全配置，包括超管 Token 和速率限制 |
+| `[security]` | 安全配置，包括超管 Token、速率限制和 Agent 注册密钥 |
 | `[logging]` | 日志配置，支持每日/每小时轮转 |
-| `[terminal_history]` | 终端历史回放配置，用于断线重连后恢复输出 |
+| `[terminal_history]` | 终端历史回放配置，使用内存缓冲区批量写入数据库 |
 | `[audit_log]` | 审计日志配置，记录用户操作用于安全审计 |
 
 ## 构建
@@ -659,13 +689,15 @@ launchctl unload ~/Library/LaunchAgents/com.claude-tunnel.agent.plist
 ## 安全建议
 
 1. 使用强随机 Token（至少 32 字符）
-2. 启用审计日志并定期审查
-3. 定期轮换 Token
-4. 使用 HTTPS (启用 Nginx + Let's Encrypt)
-5. 启用 Redis 速率限制防止暴力破解
-6. 限制 SSH 访问
-7. 启用防火墙，只开放必要端口 (80, 443)
-8. 定期备份数据库
+2. 配置 `agent_secret` 防止未授权 Agent 注册
+3. 配置 `allowed_origins` 防止跨站 WebSocket 劫持
+4. 启用审计日志并定期审查
+5. 定期轮换 Token
+6. 使用 HTTPS (启用 Nginx + Let's Encrypt)
+7. 启用 Redis 速率限制防止暴力破解
+8. 限制 SSH 访问
+9. 启用防火墙，只开放必要端口 (80, 443)
+10. 定期备份数据库
 
 ## 故障排查
 

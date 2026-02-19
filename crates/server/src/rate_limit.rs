@@ -4,6 +4,15 @@ use anyhow::Result;
 use deadpool_redis::{Pool, Connection};
 use redis::AsyncCommands;
 
+/// Lua script for atomic INCR + EXPIRE
+const RATE_LIMIT_SCRIPT: &str = r#"
+local c = redis.call('INCR', KEYS[1])
+if c == 1 then
+    redis.call('EXPIRE', KEYS[1], ARGV[1])
+end
+return c
+"#;
+
 /// Rate limiter configuration
 #[derive(Clone)]
 pub struct RateLimiter {
@@ -30,13 +39,12 @@ impl RateLimiter {
         let mut conn = self.get_connection().await?;
         let redis_key = format!("rate_limit:{}", key);
 
-        // Increment counter
-        let count: u32 = conn.incr(&redis_key, 1).await?;
-
-        // Set expiry on first request
-        if count == 1 {
-            conn.expire::<_, ()>(&redis_key, self.window_seconds as i64).await?;
-        }
+        // Atomic INCR + EXPIRE using Lua script
+        let count: u32 = redis::Script::new(RATE_LIMIT_SCRIPT)
+            .key(&redis_key)
+            .arg(self.window_seconds as i64)
+            .invoke_async(&mut *conn)
+            .await?;
 
         Ok(count <= self.limit_per_minute)
     }

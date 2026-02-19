@@ -5,11 +5,13 @@ use std::sync::Arc;
 use axum::extract::ws::{Message, WebSocket};
 use futures_util::{SinkExt, StreamExt};
 use tokio::sync::mpsc;
+use tokio::time::{Duration, Instant};
 use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
 use common::{AgentMessage, ExistingInstance, Instance, InstanceStatus, ServerToAgentMessage};
 
+use crate::auth::hash_token;
 use crate::state::AppState;
 
 /// Handle an agent WebSocket connection
@@ -18,7 +20,25 @@ pub async fn handle_agent_connection(socket: WebSocket, state: Arc<AppState>) {
 
     // Wait for registration message
     let (agent_id, agent_name, existing_instances) = match wait_for_registration(&mut ws_stream).await {
-        Some((id, name, admin_token, share_token, existing_instances)) => {
+        Some((id, name, admin_token, share_token, existing_instances, agent_secret)) => {
+            // Verify agent_secret if server has one configured
+            if let Some(ref expected_hash) = state.agent_secret_hash {
+                let provided_hash = agent_secret.as_ref().map(|s| hash_token(s));
+                match provided_hash {
+                    Some(ref h) if h == expected_hash => {}
+                    _ => {
+                        warn!("Agent registration rejected: invalid agent_secret");
+                        let err = ServerToAgentMessage::Error {
+                            message: "Invalid agent_secret".to_string(),
+                        };
+                        if let Ok(json) = err.to_json() {
+                            let _ = ws_sink.send(Message::Text(json)).await;
+                        }
+                        return;
+                    }
+                }
+            }
+
             // Create channel for sending messages to agent
             let (tx, mut rx) = mpsc::channel::<ServerToAgentMessage>(256);
 
@@ -81,6 +101,7 @@ pub async fn handle_agent_connection(socket: WebSocket, state: Arc<AppState>) {
                 cwd: existing.cwd.clone(),
                 status: InstanceStatus::Running,
                 created_at: chrono::Utc::now(), // Use current time for recovered instances
+                suspended_at: None,
                 attached_users: 0,
             };
 
@@ -100,28 +121,49 @@ pub async fn handle_agent_connection(socket: WebSocket, state: Arc<AppState>) {
         }
     }
 
-    // Handle incoming messages
-    while let Some(msg) = ws_stream.next().await {
-        match msg {
-            Ok(Message::Text(text)) => {
-                if let Err(e) = handle_agent_message(&text, agent_id, &state).await {
-                    error!("Error handling agent message: {}", e);
+    // Handle incoming messages with heartbeat timeout detection
+    // Agent sends heartbeat every 30s, so 90s (3x) without any message means dead connection
+    const HEARTBEAT_TIMEOUT: Duration = Duration::from_secs(90);
+    let mut last_message_time = Instant::now();
+
+    loop {
+        tokio::select! {
+            msg = ws_stream.next() => {
+                match msg {
+                    Some(Ok(Message::Text(text))) => {
+                        last_message_time = Instant::now();
+                        if let Err(e) = handle_agent_message(&text, agent_id, &state).await {
+                            error!("Error handling agent message: {}", e);
+                        }
+                    }
+                    Some(Ok(Message::Ping(_data))) => {
+                        last_message_time = Instant::now();
+                        debug!("Received ping from agent {}", agent_id);
+                    }
+                    Some(Ok(Message::Pong(_))) => {
+                        last_message_time = Instant::now();
+                        debug!("Received pong from agent {}", agent_id);
+                    }
+                    Some(Ok(Message::Close(_))) => {
+                        info!("Agent {} disconnected", agent_id);
+                        break;
+                    }
+                    Some(Ok(_)) => {
+                        last_message_time = Instant::now();
+                    }
+                    Some(Err(e)) => {
+                        warn!("WebSocket error from agent {}: {}", agent_id, e);
+                        break;
+                    }
+                    None => {
+                        // Stream ended
+                        break;
+                    }
                 }
             }
-            Ok(Message::Ping(_data)) => {
-                // Ping handled automatically by axum
-                debug!("Received ping from agent {}", agent_id);
-            }
-            Ok(Message::Pong(_)) => {
-                debug!("Received pong from agent {}", agent_id);
-            }
-            Ok(Message::Close(_)) => {
-                info!("Agent {} disconnected", agent_id);
-                break;
-            }
-            Ok(_) => {}
-            Err(e) => {
-                warn!("WebSocket error from agent {}: {}", agent_id, e);
+            _ = tokio::time::sleep_until(last_message_time + HEARTBEAT_TIMEOUT) => {
+                warn!("Agent {} heartbeat timeout (no message for {}s), disconnecting",
+                    agent_id, HEARTBEAT_TIMEOUT.as_secs());
                 break;
             }
         }
@@ -139,7 +181,7 @@ pub async fn handle_agent_connection(socket: WebSocket, state: Arc<AppState>) {
 /// Wait for the registration message from an agent
 async fn wait_for_registration(
     ws_stream: &mut futures_util::stream::SplitStream<WebSocket>,
-) -> Option<(Uuid, String, String, String, Vec<ExistingInstance>)> {
+) -> Option<(Uuid, String, String, String, Vec<ExistingInstance>, Option<String>)> {
     while let Some(msg) = ws_stream.next().await {
         match msg {
             Ok(Message::Text(text)) => {
@@ -149,9 +191,10 @@ async fn wait_for_registration(
                     admin_token,
                     share_token,
                     existing_instances,
+                    agent_secret,
                 }) = AgentMessage::from_json(&text)
                 {
-                    return Some((agent_id, name, admin_token, share_token, existing_instances));
+                    return Some((agent_id, name, admin_token, share_token, existing_instances, agent_secret));
                 }
             }
             Ok(Message::Close(_)) | Err(_) => return None,
@@ -183,6 +226,7 @@ async fn handle_agent_message(
                 cwd: cwd.clone(),
                 status: InstanceStatus::Running,
                 created_at: chrono::Utc::now(),
+                suspended_at: None,
                 attached_users: 0,
             };
 

@@ -10,5 +10,4 @@ pub mod config;
 
 pub use protocol::*;
 pub use types::*;
-pub use error::*;
 pub use config::*;

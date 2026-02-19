@@ -117,6 +117,7 @@ impl TunnelConnection {
             admin_token: self.runtime.admin_token.clone(),
             share_token: self.runtime.share_token.clone(),
             existing_instances,
+            agent_secret: self.runtime.config.server.agent_secret.clone(),
         };
 
         ws_sink
@@ -148,9 +149,6 @@ impl TunnelConnection {
                 }
             }
         }
-
-        // Clone instances for the message handler (kept for future multi-instance handling)
-        let _instances = Arc::clone(&self.instances);
 
         // Heartbeat interval from configuration
         let heartbeat_secs = self.runtime.config.server.heartbeat_interval;

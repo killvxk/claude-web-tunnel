@@ -97,6 +97,9 @@ pub struct Instance {
     pub status: InstanceStatus,
     /// Creation timestamp
     pub created_at: DateTime<Utc>,
+    /// Timestamp when instance was suspended (None if running)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub suspended_at: Option<DateTime<Utc>>,
     /// Number of attached users
     #[serde(default)]
     pub attached_users: usize,
@@ -111,6 +114,7 @@ impl Instance {
             cwd: cwd.into(),
             status: InstanceStatus::Running,
             created_at: Utc::now(),
+            suspended_at: None,
             attached_users: 0,
         }
     }

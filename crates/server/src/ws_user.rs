@@ -5,6 +5,7 @@ use std::sync::Arc;
 use axum::extract::ws::{Message, WebSocket};
 use futures_util::{SinkExt, StreamExt};
 use tokio::sync::mpsc;
+use tokio::time::{Duration, Instant};
 use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
@@ -115,10 +116,34 @@ pub async fn handle_user_connection(socket: WebSocket, state: Arc<AppState>, cli
 
     let (role, agent_id) = auth_result;
 
+    // Rate limiting for mutation operations (10 per minute)
+    let mut mutation_count: u32 = 0;
+    let mut mutation_window_start = Instant::now();
+    const MUTATION_RATE_LIMIT: u32 = 10;
+    const MUTATION_WINDOW: Duration = Duration::from_secs(60);
+
     // Handle incoming messages
     while let Some(msg) = ws_stream.next().await {
         match msg {
             Ok(Message::Text(text)) => {
+                // Check if this is a mutation operation for rate limiting
+                let is_mutation = is_mutation_message(&text);
+                if is_mutation {
+                    if mutation_window_start.elapsed() > MUTATION_WINDOW {
+                        mutation_count = 0;
+                        mutation_window_start = Instant::now();
+                    }
+                    mutation_count += 1;
+                    if mutation_count > MUTATION_RATE_LIMIT {
+                        warn!("User {} exceeded mutation rate limit", session_id);
+                        let error_msg = ServerToUserMessage::Error {
+                            message: "Rate limit exceeded: too many operations per minute".to_string(),
+                        };
+                        let _ = state.send_to_user(session_id, error_msg).await;
+                        continue;
+                    }
+                }
+
                 if let Err(e) =
                     handle_user_message(&text, session_id, role, agent_id, &state, &client_ip).await
                 {
@@ -661,4 +686,17 @@ async fn handle_user_message(
     }
 
     Ok(())
+}
+
+/// Check if a raw message JSON represents a state-mutation operation.
+/// Mutation operations: CreateInstance, CloseInstance, ForceDisconnectAgent,
+/// ForceCloseInstance, DeleteAgent. Non-mutation: PtyInput, Resize, Heartbeat,
+/// ListInstances, Attach, Detach, etc.
+fn is_mutation_message(text: &str) -> bool {
+    // Quick check on the raw JSON text to avoid full deserialization
+    text.contains("\"create_instance\"")
+        || text.contains("\"close_instance\"")
+        || text.contains("\"force_disconnect_agent\"")
+        || text.contains("\"force_close_instance\"")
+        || text.contains("\"delete_agent\"")
 }

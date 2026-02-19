@@ -51,6 +51,7 @@ impl ServerRuntime {
             server: HttpServerConfig {
                 host: "127.0.0.1".to_string(),
                 port: 8080,
+                allowed_origins: Vec::new(),
             },
             database: DatabaseConfig {
                 db_type: "sqlite".to_string(),
@@ -62,6 +63,7 @@ impl ServerRuntime {
                 super_admin_token: String::new(),
                 rate_limit_per_minute: 10,
                 token_min_length: 32,
+                agent_secret: None,
             },
             logging: LoggingConfig {
                 level: "info".to_string(),

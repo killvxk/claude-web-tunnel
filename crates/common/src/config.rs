@@ -34,6 +34,9 @@ pub struct ServerConnectionConfig {
     /// Heartbeat interval in seconds
     #[serde(default = "default_heartbeat_interval")]
     pub heartbeat_interval: u64,
+    /// Agent secret for server authentication (optional, must match server config)
+    #[serde(default)]
+    pub agent_secret: Option<String>,
 }
 
 fn default_reconnect_interval() -> u64 {
@@ -231,6 +234,9 @@ pub struct HttpServerConfig {
     /// Port to listen on
     #[serde(default = "default_port")]
     pub port: u16,
+    /// Allowed CORS origins (empty = same-origin only)
+    #[serde(default)]
+    pub allowed_origins: Vec<String>,
 }
 
 fn default_host() -> String {
@@ -246,6 +252,7 @@ impl Default for HttpServerConfig {
         Self {
             host: default_host(),
             port: default_port(),
+            allowed_origins: Vec::new(),
         }
     }
 }
@@ -282,6 +289,9 @@ pub struct SecurityConfig {
     /// Minimum token length
     #[serde(default = "default_token_min_length")]
     pub token_min_length: usize,
+    /// Agent secret for agent registration authentication (optional)
+    #[serde(default)]
+    pub agent_secret: Option<String>,
 }
 
 fn default_rate_limit() -> u32 {
@@ -294,14 +304,14 @@ fn default_token_min_length() -> usize {
 
 impl AgentConfig {
     /// Load configuration from a TOML file
-    pub fn from_file(path: &std::path::Path) -> Result<Self, Box<dyn std::error::Error>> {
+    pub fn from_file(path: &std::path::Path) -> anyhow::Result<Self> {
         let content = std::fs::read_to_string(path)?;
         let config: Self = toml::from_str(&content)?;
         Ok(config)
     }
 
     /// Save configuration to a TOML file
-    pub fn to_file(&self, path: &std::path::Path) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn to_file(&self, path: &std::path::Path) -> anyhow::Result<()> {
         let content = toml::to_string_pretty(self)?;
         std::fs::write(path, content)?;
         Ok(())
@@ -310,7 +320,7 @@ impl AgentConfig {
 
 impl ServerConfig {
     /// Load configuration from a TOML file
-    pub fn from_file(path: &std::path::Path) -> Result<Self, Box<dyn std::error::Error>> {
+    pub fn from_file(path: &std::path::Path) -> anyhow::Result<Self> {
         let content = std::fs::read_to_string(path)?;
         let config: Self = toml::from_str(&content)?;
         Ok(config)

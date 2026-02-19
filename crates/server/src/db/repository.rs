@@ -12,12 +12,21 @@ use crate::auth::hash_token;
 #[derive(Clone)]
 pub struct AgentRepository {
     pool: AnyPool,
+    db_type: String,
 }
 
 impl AgentRepository {
     /// Create a new repository
-    pub fn new(pool: AnyPool) -> Self {
-        Self { pool }
+    pub fn new(pool: AnyPool, db_type: String) -> Self {
+        Self { pool, db_type }
+    }
+
+    /// Check database connectivity
+    pub async fn health_check(&self) -> Result<()> {
+        sqlx::query("SELECT 1")
+            .execute(&self.pool)
+            .await?;
+        Ok(())
     }
 
     /// Create or update an agent in the database
@@ -34,40 +43,47 @@ impl AgentRepository {
         let now = Utc::now().to_rfc3339();
 
         // Try to insert, if exists update
-        sqlx::query(
-            r#"
-            INSERT INTO agents (id, name, admin_token_hash, share_token_hash, created_at, last_connected_at)
-            VALUES (?, ?, ?, ?, ?, ?)
-            ON CONFLICT(id) DO UPDATE SET
-                name = excluded.name,
-                admin_token_hash = excluded.admin_token_hash,
-                share_token_hash = excluded.share_token_hash,
-                last_connected_at = excluded.last_connected_at
-            "#,
-        )
-        .bind(&id_str)
-        .bind(name)
-        .bind(&admin_hash)
-        .bind(&share_hash)
-        .bind(&now)
-        .bind(&now)
-        .execute(&self.pool)
-        .await?;
-
-        Ok(())
-    }
-
-    /// Update last connected timestamp
-    #[allow(dead_code)]
-    pub async fn update_last_connected(&self, id: Uuid) -> Result<()> {
-        let id_str = id.to_string();
-        let now = Utc::now().to_rfc3339();
-
-        sqlx::query("UPDATE agents SET last_connected_at = ? WHERE id = ?")
-            .bind(&now)
+        if self.db_type == "mysql" {
+            sqlx::query(
+                r#"
+                INSERT INTO agents (id, name, admin_token_hash, share_token_hash, created_at, last_connected_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                ON DUPLICATE KEY UPDATE
+                    name = VALUES(name),
+                    admin_token_hash = VALUES(admin_token_hash),
+                    share_token_hash = VALUES(share_token_hash),
+                    last_connected_at = VALUES(last_connected_at)
+                "#,
+            )
             .bind(&id_str)
+            .bind(name)
+            .bind(&admin_hash)
+            .bind(&share_hash)
+            .bind(&now)
+            .bind(&now)
             .execute(&self.pool)
             .await?;
+        } else {
+            sqlx::query(
+                r#"
+                INSERT INTO agents (id, name, admin_token_hash, share_token_hash, created_at, last_connected_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                ON CONFLICT(id) DO UPDATE SET
+                    name = excluded.name,
+                    admin_token_hash = excluded.admin_token_hash,
+                    share_token_hash = excluded.share_token_hash,
+                    last_connected_at = excluded.last_connected_at
+                "#,
+            )
+            .bind(&id_str)
+            .bind(name)
+            .bind(&admin_hash)
+            .bind(&share_hash)
+            .bind(&now)
+            .bind(&now)
+            .execute(&self.pool)
+            .await?;
+        }
 
         Ok(())
     }
@@ -100,35 +116,7 @@ impl AgentRepository {
         Ok(record)
     }
 
-    /// Find agent by ID
-    #[allow(dead_code)]
-    pub async fn find_by_id(&self, id: Uuid) -> Result<Option<AgentRecord>> {
-        let id_str = id.to_string();
-
-        let record = sqlx::query_as::<_, AgentRecord>(
-            "SELECT id, name, admin_token_hash, share_token_hash, created_at, last_connected_at FROM agents WHERE id = ?"
-        )
-        .bind(&id_str)
-        .fetch_optional(&self.pool)
-        .await?;
-
-        Ok(record)
-    }
-
-    /// Get all agents
-    #[allow(dead_code)]
-    pub async fn find_all(&self) -> Result<Vec<AgentRecord>> {
-        let records = sqlx::query_as::<_, AgentRecord>(
-            "SELECT id, name, admin_token_hash, share_token_hash, created_at, last_connected_at FROM agents ORDER BY created_at DESC"
-        )
-        .fetch_all(&self.pool)
-        .await?;
-
-        Ok(records)
-    }
-
     /// Delete an agent
-    #[allow(dead_code)]
     pub async fn delete(&self, id: Uuid) -> Result<bool> {
         let id_str = id.to_string();
 
@@ -163,18 +151,32 @@ impl AgentRepository {
         let id_str = agent_id.to_string();
         let now = Utc::now().to_rfc3339();
 
-        sqlx::query(
-            r#"
-            INSERT INTO agent_tags (agent_id, tag, created_at)
-            VALUES (?, ?, ?)
-            ON CONFLICT(agent_id, tag) DO NOTHING
-            "#
-        )
-        .bind(&id_str)
-        .bind(tag)
-        .bind(&now)
-        .execute(&self.pool)
-        .await?;
+        if self.db_type == "mysql" {
+            sqlx::query(
+                r#"
+                INSERT IGNORE INTO agent_tags (agent_id, tag, created_at)
+                VALUES (?, ?, ?)
+                "#
+            )
+            .bind(&id_str)
+            .bind(tag)
+            .bind(&now)
+            .execute(&self.pool)
+            .await?;
+        } else {
+            sqlx::query(
+                r#"
+                INSERT INTO agent_tags (agent_id, tag, created_at)
+                VALUES (?, ?, ?)
+                ON CONFLICT(agent_id, tag) DO NOTHING
+                "#
+            )
+            .bind(&id_str)
+            .bind(tag)
+            .bind(&now)
+            .execute(&self.pool)
+            .await?;
+        }
 
         Ok(())
     }
@@ -216,21 +218,39 @@ impl AgentRepository {
         let id_str = instance_id.to_string();
         let now = Utc::now().to_rfc3339();
 
-        sqlx::query(
-            r#"
-            INSERT INTO terminal_history_meta (instance_id, total_bytes, next_sequence, buffer_size_kb, created_at, updated_at)
-            VALUES (?, 0, 0, ?, ?, ?)
-            ON CONFLICT(instance_id) DO UPDATE SET
-                buffer_size_kb = excluded.buffer_size_kb,
-                updated_at = excluded.updated_at
-            "#
-        )
-        .bind(&id_str)
-        .bind(buffer_size_kb)
-        .bind(&now)
-        .bind(&now)
-        .execute(&self.pool)
-        .await?;
+        if self.db_type == "mysql" {
+            sqlx::query(
+                r#"
+                INSERT INTO terminal_history_meta (instance_id, total_bytes, next_sequence, buffer_size_kb, created_at, updated_at)
+                VALUES (?, 0, 0, ?, ?, ?)
+                ON DUPLICATE KEY UPDATE
+                    buffer_size_kb = VALUES(buffer_size_kb),
+                    updated_at = VALUES(updated_at)
+                "#
+            )
+            .bind(&id_str)
+            .bind(buffer_size_kb)
+            .bind(&now)
+            .bind(&now)
+            .execute(&self.pool)
+            .await?;
+        } else {
+            sqlx::query(
+                r#"
+                INSERT INTO terminal_history_meta (instance_id, total_bytes, next_sequence, buffer_size_kb, created_at, updated_at)
+                VALUES (?, 0, 0, ?, ?, ?)
+                ON CONFLICT(instance_id) DO UPDATE SET
+                    buffer_size_kb = excluded.buffer_size_kb,
+                    updated_at = excluded.updated_at
+                "#
+            )
+            .bind(&id_str)
+            .bind(buffer_size_kb)
+            .bind(&now)
+            .bind(&now)
+            .execute(&self.pool)
+            .await?;
+        }
 
         Ok(())
     }
@@ -332,31 +352,47 @@ impl AgentRepository {
         .fetch_one(&self.pool)
         .await?;
 
-        let mut current_total = total.0;
+        let current_total = total.0;
+        if current_total <= target_size {
+            return Ok(current_total);
+        }
 
-        // Delete oldest records until we're under target
-        while current_total > target_size {
-            // Find the oldest record
-            let oldest: Option<(i64, i32)> = sqlx::query_as(
-                "SELECT id, byte_size FROM terminal_history WHERE instance_id = ? ORDER BY sequence_number ASC LIMIT 1"
-            )
-            .bind(&id_str)
-            .fetch_optional(&self.pool)
-            .await?;
+        let excess = current_total - target_size;
 
-            match oldest {
-                Some((id, size)) => {
-                    sqlx::query("DELETE FROM terminal_history WHERE id = ?")
-                        .bind(id)
-                        .execute(&self.pool)
-                        .await?;
-                    current_total -= size as i64;
-                }
-                None => break,
+        // Calculate how many oldest records to delete by accumulating byte_size
+        // Use a running sum to find the minimum number of rows whose total >= excess
+        let rows: Vec<(i64, i32)> = sqlx::query_as(
+            "SELECT id, byte_size FROM terminal_history WHERE instance_id = ? ORDER BY sequence_number ASC"
+        )
+        .bind(&id_str)
+        .fetch_all(&self.pool)
+        .await?;
+
+        let mut accumulated: i64 = 0;
+        let mut delete_count: i64 = 0;
+        for (_id, size) in &rows {
+            accumulated += *size as i64;
+            delete_count += 1;
+            if accumulated >= excess {
+                break;
             }
         }
 
-        Ok(current_total)
+        if delete_count > 0 {
+            // Batch delete oldest N records in one query
+            sqlx::query(
+                "DELETE FROM terminal_history WHERE id IN (\
+                    SELECT id FROM (SELECT id FROM terminal_history WHERE instance_id = ? \
+                    ORDER BY sequence_number ASC LIMIT ?) AS tmp\
+                )"
+            )
+            .bind(&id_str)
+            .bind(delete_count)
+            .execute(&self.pool)
+            .await?;
+        }
+
+        Ok(current_total - accumulated)
     }
 
     /// Get terminal history for an instance (ordered by sequence)

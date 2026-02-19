@@ -101,6 +101,7 @@ impl AgentRuntime {
                 url: String::new(),
                 reconnect_interval: 5,
                 heartbeat_interval: 30,
+                agent_secret: None,
             },
             agent: AgentIdentityConfig {
                 name: hostname::get()

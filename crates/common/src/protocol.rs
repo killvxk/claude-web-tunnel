@@ -43,6 +43,9 @@ pub enum AgentMessage {
         /// Existing instances for reconnection sync (optional, backward compatible)
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         existing_instances: Vec<ExistingInstance>,
+        /// Agent secret for server authentication (optional, backward compatible)
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        agent_secret: Option<String>,
     },
     /// Report instance created
     InstanceCreated {
@@ -394,53 +397,25 @@ pub enum ServerToUserMessage {
 // Helper functions
 // ============================================================================
 
-impl AgentMessage {
-    /// Serialize to JSON string
-    pub fn to_json(&self) -> Result<String, serde_json::Error> {
-        serde_json::to_string(self)
-    }
+macro_rules! impl_json_serialization {
+    ($($type:ty),+) => {
+        $(
+            impl $type {
+                /// Serialize to JSON string
+                pub fn to_json(&self) -> Result<String, serde_json::Error> {
+                    serde_json::to_string(self)
+                }
 
-    /// Deserialize from JSON string
-    pub fn from_json(s: &str) -> Result<Self, serde_json::Error> {
-        serde_json::from_str(s)
-    }
+                /// Deserialize from JSON string
+                pub fn from_json(s: &str) -> Result<Self, serde_json::Error> {
+                    serde_json::from_str(s)
+                }
+            }
+        )+
+    };
 }
 
-impl ServerToAgentMessage {
-    /// Serialize to JSON string
-    pub fn to_json(&self) -> Result<String, serde_json::Error> {
-        serde_json::to_string(self)
-    }
-
-    /// Deserialize from JSON string
-    pub fn from_json(s: &str) -> Result<Self, serde_json::Error> {
-        serde_json::from_str(s)
-    }
-}
-
-impl UserMessage {
-    /// Serialize to JSON string
-    pub fn to_json(&self) -> Result<String, serde_json::Error> {
-        serde_json::to_string(self)
-    }
-
-    /// Deserialize from JSON string
-    pub fn from_json(s: &str) -> Result<Self, serde_json::Error> {
-        serde_json::from_str(s)
-    }
-}
-
-impl ServerToUserMessage {
-    /// Serialize to JSON string
-    pub fn to_json(&self) -> Result<String, serde_json::Error> {
-        serde_json::to_string(self)
-    }
-
-    /// Deserialize from JSON string
-    pub fn from_json(s: &str) -> Result<Self, serde_json::Error> {
-        serde_json::from_str(s)
-    }
-}
+impl_json_serialization!(AgentMessage, ServerToAgentMessage, UserMessage, ServerToUserMessage);
 
 #[cfg(test)]
 mod tests {
@@ -454,6 +429,7 @@ mod tests {
             admin_token: "admin123".to_string(),
             share_token: "share456".to_string(),
             existing_instances: vec![],
+            agent_secret: None,
         };
         let json = msg.to_json().unwrap();
         assert!(json.contains("\"type\":\"register\""));
