@@ -11,17 +11,17 @@
 #[global_allocator]
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
+mod auth;
 mod cli;
 mod config;
+mod db;
+mod logging;
+mod rate_limit;
+mod routes;
 mod state;
-mod auth;
+mod static_files;
 mod ws_agent;
 mod ws_user;
-mod routes;
-mod db;
-mod rate_limit;
-mod logging;
-mod static_files;
 
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -35,10 +35,10 @@ use tracing::{info, warn};
 
 use crate::cli::Args;
 use crate::config::ServerRuntime;
-use crate::state::AppState;
 use crate::db::{init_database, AgentRepository};
-use crate::rate_limit::{init_redis, RateLimiter};
 use crate::logging::init_logging;
+use crate::rate_limit::{init_redis, RateLimiter};
+use crate::state::AppState;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -52,7 +52,10 @@ async fn main() -> Result<()> {
     let _log_guard = init_logging(&runtime.config.logging);
 
     info!("Claude Tunnel Server starting...");
-    info!("Server: {}:{}", runtime.config.server.host, runtime.config.server.port);
+    info!(
+        "Server: {}:{}",
+        runtime.config.server.host, runtime.config.server.port
+    );
     info!("Database: {}", runtime.config.database.db_type);
 
     // Initialize database
@@ -129,7 +132,9 @@ async fn main() -> Result<()> {
             let mut interval = tokio::time::interval(std::time::Duration::from_secs(60)); // Check every minute
             loop {
                 interval.tick().await;
-                cleanup_state.cleanup_expired_suspended_instances(1800).await; // 30 minutes timeout
+                cleanup_state
+                    .cleanup_expired_suspended_instances(1800)
+                    .await; // 30 minutes timeout
             }
         });
         info!("Suspended instance cleanup task started (30 min timeout)");
@@ -152,9 +157,7 @@ async fn main() -> Result<()> {
     let cors = if runtime.config.server.allowed_origins.is_empty() {
         // No origins configured: no Access-Control-Allow-Origin header,
         // browsers will block cross-origin requests
-        CorsLayer::new()
-            .allow_methods(Any)
-            .allow_headers(Any)
+        CorsLayer::new().allow_methods(Any).allow_headers(Any)
     } else {
         let origins: Vec<_> = runtime
             .config
@@ -163,7 +166,10 @@ async fn main() -> Result<()> {
             .iter()
             .filter_map(|o| o.parse().ok())
             .collect();
-        info!("CORS allowed origins: {:?}", runtime.config.server.allowed_origins);
+        info!(
+            "CORS allowed origins: {:?}",
+            runtime.config.server.allowed_origins
+        );
         CorsLayer::new()
             .allow_origin(tower_http::cors::AllowOrigin::list(origins))
             .allow_methods(Any)
@@ -188,9 +194,12 @@ async fn main() -> Result<()> {
 
     let listener = TcpListener::bind(addr).await?;
 
-    axum::serve(listener, app.into_make_service_with_connect_info::<SocketAddr>())
-        .with_graceful_shutdown(shutdown_signal(shutdown_state))
-        .await?;
+    axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<SocketAddr>(),
+    )
+    .with_graceful_shutdown(shutdown_signal(shutdown_state))
+    .await?;
 
     info!("Server shut down gracefully");
 

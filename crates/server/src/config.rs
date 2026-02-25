@@ -3,7 +3,10 @@
 use anyhow::{anyhow, Result};
 use std::path::PathBuf;
 
-use common::{AuditLogConfig, DatabaseConfig, HttpServerConfig, LoggingConfig, SecurityConfig, ServerConfig, TerminalHistoryConfig};
+use common::{
+    AuditLogConfig, DatabaseConfig, HttpServerConfig, LoggingConfig, SecurityConfig, ServerConfig,
+    TerminalHistoryConfig,
+};
 
 use crate::cli::Args;
 

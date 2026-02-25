@@ -1,7 +1,7 @@
 //! Logging system with daily file rotation
 
-use std::path::Path;
 use common::LoggingConfig;
+use std::path::Path;
 use tracing_appender::rolling::{RollingFileAppender, Rotation};
 use tracing_subscriber::prelude::*;
 

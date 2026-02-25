@@ -19,69 +19,70 @@ pub async fn handle_agent_connection(socket: WebSocket, state: Arc<AppState>) {
     let (mut ws_sink, mut ws_stream) = socket.split();
 
     // Wait for registration message
-    let (agent_id, agent_name, existing_instances) = match wait_for_registration(&mut ws_stream).await {
-        Some((id, name, admin_token, share_token, existing_instances, agent_secret)) => {
-            // Verify agent_secret if server has one configured
-            if let Some(ref expected_hash) = state.agent_secret_hash {
-                let provided_hash = agent_secret.as_ref().map(|s| hash_token(s));
-                match provided_hash {
-                    Some(ref h) if h == expected_hash => {}
-                    _ => {
-                        warn!("Agent registration rejected: invalid agent_secret");
-                        let err = ServerToAgentMessage::Error {
-                            message: "Invalid agent_secret".to_string(),
-                        };
-                        if let Ok(json) = err.to_json() {
-                            let _ = ws_sink.send(Message::Text(json)).await;
+    let (agent_id, agent_name, existing_instances) =
+        match wait_for_registration(&mut ws_stream).await {
+            Some((id, name, admin_token, share_token, existing_instances, agent_secret)) => {
+                // Verify agent_secret if server has one configured
+                if let Some(ref expected_hash) = state.agent_secret_hash {
+                    let provided_hash = agent_secret.as_ref().map(|s| hash_token(s));
+                    match provided_hash {
+                        Some(ref h) if h == expected_hash => {}
+                        _ => {
+                            warn!("Agent registration rejected: invalid agent_secret");
+                            let err = ServerToAgentMessage::Error {
+                                message: "Invalid agent_secret".to_string(),
+                            };
+                            if let Ok(json) = err.to_json() {
+                                let _ = ws_sink.send(Message::Text(json)).await;
+                            }
+                            return;
                         }
+                    }
+                }
+
+                // Create channel for sending messages to agent
+                let (tx, mut rx) = mpsc::channel::<ServerToAgentMessage>(256);
+
+                // Register agent (this may be a reconnection)
+                state
+                    .register_agent(id, name.clone(), admin_token, share_token, tx)
+                    .await;
+
+                info!("Agent registered: {} ({})", name, id);
+
+                // Broadcast agent online status to users
+                state.broadcast_agent_status(id, true).await;
+
+                // Send registration confirmation
+                let confirm = ServerToAgentMessage::Registered {
+                    message: "Registration successful".to_string(),
+                };
+                if let Ok(json) = confirm.to_json() {
+                    if ws_sink.send(Message::Text(json)).await.is_err() {
+                        state.unregister_agent(id).await;
                         return;
                     }
                 }
-            }
 
-            // Create channel for sending messages to agent
-            let (tx, mut rx) = mpsc::channel::<ServerToAgentMessage>(256);
-
-            // Register agent (this may be a reconnection)
-            state
-                .register_agent(id, name.clone(), admin_token, share_token, tx)
-                .await;
-
-            info!("Agent registered: {} ({})", name, id);
-
-            // Broadcast agent online status to users
-            state.broadcast_agent_status(id, true).await;
-
-            // Send registration confirmation
-            let confirm = ServerToAgentMessage::Registered {
-                message: "Registration successful".to_string(),
-            };
-            if let Ok(json) = confirm.to_json() {
-                if ws_sink.send(Message::Text(json)).await.is_err() {
-                    state.unregister_agent(id).await;
-                    return;
-                }
-            }
-
-            // Spawn task to forward messages from channel to WebSocket
-            let mut ws_sink_clone = ws_sink;
-            tokio::spawn(async move {
-                while let Some(msg) = rx.recv().await {
-                    if let Ok(json) = msg.to_json() {
-                        if ws_sink_clone.send(Message::Text(json)).await.is_err() {
-                            break;
+                // Spawn task to forward messages from channel to WebSocket
+                let mut ws_sink_clone = ws_sink;
+                tokio::spawn(async move {
+                    while let Some(msg) = rx.recv().await {
+                        if let Ok(json) = msg.to_json() {
+                            if ws_sink_clone.send(Message::Text(json)).await.is_err() {
+                                break;
+                            }
                         }
                     }
-                }
-            });
+                });
 
-            (id, name, existing_instances)
-        }
-        None => {
-            warn!("Agent connection closed before registration");
-            return;
-        }
-    };
+                (id, name, existing_instances)
+            }
+            None => {
+                warn!("Agent connection closed before registration");
+                return;
+            }
+        };
 
     // ========================================================================
     // Reconnection Recovery: Restore instances from agent
@@ -108,11 +109,17 @@ pub async fn handle_agent_connection(socket: WebSocket, state: Arc<AppState>) {
             // Try to restore from suspended state first, or add as new
             let was_suspended = state.restore_instance(agent_id, existing.id).await;
             if was_suspended {
-                info!("Restored suspended instance {} for agent {}", existing.id, agent_id);
+                info!(
+                    "Restored suspended instance {} for agent {}",
+                    existing.id, agent_id
+                );
             } else {
                 // Add as new instance (wasn't tracked before)
                 state.add_instance(agent_id, instance.clone()).await;
-                info!("Added recovered instance {} for agent {}", existing.id, agent_id);
+                info!(
+                    "Added recovered instance {} for agent {}",
+                    existing.id, agent_id
+                );
             }
 
             // Notify users about the instance
@@ -170,7 +177,9 @@ pub async fn handle_agent_connection(socket: WebSocket, state: Arc<AppState>) {
     }
 
     // Unregister agent and notify users
-    state.update_agent_instances_status(agent_id, InstanceStatus::Suspended).await;
+    state
+        .update_agent_instances_status(agent_id, InstanceStatus::Suspended)
+        .await;
     state.unregister_agent(agent_id).await;
     state.broadcast_agent_status(agent_id, false).await;
     // Notify SuperAdmin users who had this agent selected as working agent
@@ -181,7 +190,14 @@ pub async fn handle_agent_connection(socket: WebSocket, state: Arc<AppState>) {
 /// Wait for the registration message from an agent
 async fn wait_for_registration(
     ws_stream: &mut futures_util::stream::SplitStream<WebSocket>,
-) -> Option<(Uuid, String, String, String, Vec<ExistingInstance>, Option<String>)> {
+) -> Option<(
+    Uuid,
+    String,
+    String,
+    String,
+    Vec<ExistingInstance>,
+    Option<String>,
+)> {
     while let Some(msg) = ws_stream.next().await {
         match msg {
             Ok(Message::Text(text)) => {
@@ -194,7 +210,14 @@ async fn wait_for_registration(
                     agent_secret,
                 }) = AgentMessage::from_json(&text)
                 {
-                    return Some((agent_id, name, admin_token, share_token, existing_instances, agent_secret));
+                    return Some((
+                        agent_id,
+                        name,
+                        admin_token,
+                        share_token,
+                        existing_instances,
+                        agent_secret,
+                    ));
                 }
             }
             Ok(Message::Close(_)) | Err(_) => return None,
@@ -218,7 +241,10 @@ async fn handle_agent_message(
             debug!("Ignoring duplicate registration from agent {}", agent_id);
         }
         AgentMessage::InstanceCreated { instance_id, cwd } => {
-            info!("Agent {} created instance {} in {}", agent_id, instance_id, cwd);
+            info!(
+                "Agent {} created instance {} in {}",
+                agent_id, instance_id, cwd
+            );
 
             let instance = Instance {
                 id: instance_id,

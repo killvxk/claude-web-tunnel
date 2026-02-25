@@ -1,7 +1,7 @@
 //! Rate limiting module using Redis
 
 use anyhow::Result;
-use deadpool_redis::{Pool, Connection};
+use deadpool_redis::{Connection, Pool};
 use redis::AsyncCommands;
 
 /// Lua script for atomic INCR + EXPIRE
@@ -76,7 +76,10 @@ impl RateLimiter {
     }
 
     async fn get_connection(&self) -> Result<Connection> {
-        self.pool.get().await.map_err(|e| anyhow::anyhow!("Failed to get Redis connection: {}", e))
+        self.pool
+            .get()
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to get Redis connection: {}", e))
     }
 }
 

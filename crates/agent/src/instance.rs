@@ -57,7 +57,8 @@ impl InstanceManager {
         cwd: &str,
         output_tx: mpsc::Sender<(Uuid, Vec<u8>)>,
     ) -> Result<()> {
-        self.create_instance_with_mode(id, cwd, output_tx, self.default_mode).await
+        self.create_instance_with_mode(id, cwd, output_tx, self.default_mode)
+            .await
     }
 
     /// Create a new Claude Code instance with specified mode
@@ -168,7 +169,10 @@ impl InstanceManager {
             let inst = instance.lock().await;
             inst.rebind_output_channel(new_tx.clone()).await;
         }
-        info!("Rebound output channels for {} instances", self.instances.len());
+        info!(
+            "Rebound output channels for {} instances",
+            self.instances.len()
+        );
     }
 
     /// Mark all instances as disconnected (for buffering output)

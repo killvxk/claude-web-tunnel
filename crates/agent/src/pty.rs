@@ -61,11 +61,7 @@ pub struct PtyInstance {
 impl PtyInstance {
     /// Create a new PTY instance running Claude Code (background mode)
     #[allow(dead_code)]
-    pub fn new(
-        id: Uuid,
-        cwd: &str,
-        output_tx: mpsc::Sender<(Uuid, Vec<u8>)>,
-    ) -> Result<Self> {
+    pub fn new(id: Uuid, cwd: &str, output_tx: mpsc::Sender<(Uuid, Vec<u8>)>) -> Result<Self> {
         Self::new_with_mode(id, cwd, output_tx, PtyMode::Background)
     }
 
@@ -104,7 +100,8 @@ impl PtyInstance {
         #[cfg(windows)]
         let mut cmd = CommandBuilder::new("cmd.exe");
         #[cfg(not(windows))]
-        let mut cmd = CommandBuilder::new(std::env::var("SHELL").unwrap_or_else(|_| "/bin/bash".to_string()));
+        let mut cmd =
+            CommandBuilder::new(std::env::var("SHELL").unwrap_or_else(|_| "/bin/bash".to_string()));
 
         cmd.cwd(cwd);
 
@@ -114,7 +111,10 @@ impl PtyInstance {
             .spawn_command(cmd)
             .map_err(|e| anyhow!("Failed to spawn shell: {}", e))?;
 
-        info!("Spawned background shell process for instance {} in {}", id, cwd);
+        info!(
+            "Spawned background shell process for instance {} in {}",
+            id, cwd
+        );
 
         // Get reader and writer
         let reader = pair
@@ -205,7 +205,10 @@ impl PtyInstance {
             .spawn_command(cmd)
             .map_err(|e| anyhow!("Failed to spawn shell: {}", e))?;
 
-        info!("Spawned visible shell process for instance {} in {}", id, cwd);
+        info!(
+            "Spawned visible shell process for instance {} in {}",
+            id, cwd
+        );
 
         // Get reader and writer
         let reader = pair
@@ -302,15 +305,16 @@ impl PtyInstance {
         if let Some(handle) = viewer_handle {
             use windows_sys::Win32::Foundation::HANDLE;
             use windows_sys::Win32::System::Console::{
-                GetConsoleMode, SetConsoleMode, ENABLE_VIRTUAL_TERMINAL_PROCESSING,
-                ENABLE_PROCESSED_OUTPUT,
+                GetConsoleMode, SetConsoleMode, ENABLE_PROCESSED_OUTPUT,
+                ENABLE_VIRTUAL_TERMINAL_PROCESSING,
             };
 
             unsafe {
                 let mut mode: u32 = 0;
                 if GetConsoleMode(handle as HANDLE, &mut mode) != 0 {
                     // Enable VT processing for ANSI escape sequences
-                    let new_mode = mode | ENABLE_VIRTUAL_TERMINAL_PROCESSING | ENABLE_PROCESSED_OUTPUT;
+                    let new_mode =
+                        mode | ENABLE_VIRTUAL_TERMINAL_PROCESSING | ENABLE_PROCESSED_OUTPUT;
                     SetConsoleMode(handle as HANDLE, new_mode);
                 }
             }
@@ -384,7 +388,6 @@ impl PtyInstance {
         })
     }
 
-
     /// Create a visible PTY instance (non-Windows fallback - uses background mode)
     #[cfg(not(windows))]
     fn create_visible_pty(
@@ -392,7 +395,9 @@ impl PtyInstance {
         cwd: &str,
         output_tx: mpsc::Sender<(Uuid, Vec<u8>)>,
     ) -> Result<Self> {
-        warn!("Visible terminal mode is only supported on Windows, falling back to background mode");
+        warn!(
+            "Visible terminal mode is only supported on Windows, falling back to background mode"
+        );
         Self::create_background_pty(id, cwd, output_tx)
     }
 
@@ -471,7 +476,10 @@ impl PtyInstance {
                 let overflow = (buffer.len() + data.len()) - MAX_BUFFER_SIZE;
                 buffer.drain(..overflow);
                 buffer.extend(data);
-                debug!("Output buffer overflow for instance {}, dropped {} bytes", id, overflow);
+                debug!(
+                    "Output buffer overflow for instance {}, dropped {} bytes",
+                    id, overflow
+                );
             }
         }
     }
@@ -492,7 +500,10 @@ impl PtyInstance {
                     let mut child_guard = child.lock().unwrap();
                     match child_guard.try_wait() {
                         Ok(Some(status)) => {
-                            info!("Process exited for instance {} with status {:?}", id, status);
+                            info!(
+                                "Process exited for instance {} with status {:?}",
+                                id, status
+                            );
                             true
                         }
                         Ok(None) => false,
@@ -528,7 +539,10 @@ impl PtyInstance {
     /// Resize the PTY (only works in background mode)
     pub fn resize(&self, cols: u16, rows: u16) -> Result<()> {
         if let Some(ref master) = self.master {
-            info!("Applying PTY resize for instance {}: {}x{}", self.id, cols, rows);
+            info!(
+                "Applying PTY resize for instance {}: {}x{}",
+                self.id, cols, rows
+            );
             master
                 .resize(PtySize {
                     rows,
@@ -538,7 +552,10 @@ impl PtyInstance {
                 })
                 .map_err(|e| anyhow!("Failed to resize PTY: {}", e))?;
         } else {
-            warn!("Resize not supported - no master handle for instance {}", self.id);
+            warn!(
+                "Resize not supported - no master handle for instance {}",
+                self.id
+            );
         }
         Ok(())
     }
@@ -583,7 +600,10 @@ impl PtyInstance {
     /// When set to false, output will be buffered instead of sent
     pub fn set_connected(&self, connected: bool) {
         self.is_connected.store(connected, Ordering::SeqCst);
-        debug!("Set connection state for instance {} to {}", self.id, connected);
+        debug!(
+            "Set connection state for instance {} to {}",
+            self.id, connected
+        );
     }
 
     /// Check if currently connected

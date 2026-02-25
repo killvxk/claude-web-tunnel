@@ -74,7 +74,11 @@ fn validate_origin(headers: &HeaderMap, state: &AppState) -> Result<(), axum::re
             return Ok(());
         }
     }
-    Err((axum::http::StatusCode::FORBIDDEN, "Forbidden: origin not allowed").into_response())
+    Err((
+        axum::http::StatusCode::FORBIDDEN,
+        "Forbidden: origin not allowed",
+    )
+        .into_response())
 }
 
 /// WebSocket handler for agent connections

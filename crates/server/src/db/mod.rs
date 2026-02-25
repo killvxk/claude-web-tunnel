@@ -1,7 +1,7 @@
 //! Database module for agent persistence
 
-mod schema;
 mod repository;
+mod schema;
 
 pub use repository::*;
 
@@ -18,21 +18,31 @@ pub async fn init_database(runtime: &ServerRuntime) -> Result<AnyPool> {
     let db_type = &runtime.config.database.db_type;
     let url = match db_type.as_str() {
         "sqlite" => {
-            let path = runtime.config.database.sqlite_path.as_ref()
+            let path = runtime
+                .config
+                .database
+                .sqlite_path
+                .as_ref()
                 .map(|p| p.to_string_lossy().to_string())
                 .unwrap_or_else(|| "claude_tunnel.db".to_string());
             format!("sqlite://{}?mode=rwc", path)
         }
-        "mysql" => {
-            runtime.config.database.mysql_url.clone()
-                .unwrap_or_else(|| "mysql://localhost/claude_tunnel".to_string())
-        }
+        "mysql" => runtime
+            .config
+            .database
+            .mysql_url
+            .clone()
+            .unwrap_or_else(|| "mysql://localhost/claude_tunnel".to_string()),
         _ => {
             return Err(anyhow::anyhow!("Unsupported database type: {}", db_type));
         }
     };
 
-    tracing::info!("Connecting to database: {} (type: {})", url.split('@').next_back().unwrap_or(&url), db_type);
+    tracing::info!(
+        "Connecting to database: {} (type: {})",
+        url.split('@').next_back().unwrap_or(&url),
+        db_type
+    );
 
     let pool = AnyPoolOptions::new()
         .max_connections(5)
@@ -71,7 +81,9 @@ async fn run_migrations(pool: &AnyPool, db_type: &str) -> Result<()> {
                 .await
                 .map_err(|e| {
                     // Ignore "already exists" errors for CREATE INDEX
-                    if e.to_string().contains("already exists") || e.to_string().contains("Duplicate key name") {
+                    if e.to_string().contains("already exists")
+                        || e.to_string().contains("Duplicate key name")
+                    {
                         tracing::debug!("Skipping existing object: {}", e);
                         return anyhow::anyhow!("skip");
                     }

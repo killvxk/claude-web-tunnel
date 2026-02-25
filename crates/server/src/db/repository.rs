@@ -5,7 +5,9 @@ use chrono::Utc;
 use sqlx::AnyPool;
 use uuid::Uuid;
 
-use super::schema::{AgentRecord, AuditLogRecord, TerminalHistoryRecord, TerminalHistoryMetaRecord};
+use super::schema::{
+    AgentRecord, AuditLogRecord, TerminalHistoryMetaRecord, TerminalHistoryRecord,
+};
 use crate::auth::hash_token;
 
 /// Repository for agent database operations
@@ -23,9 +25,7 @@ impl AgentRepository {
 
     /// Check database connectivity
     pub async fn health_check(&self) -> Result<()> {
-        sqlx::query("SELECT 1")
-            .execute(&self.pool)
-            .await?;
+        sqlx::query("SELECT 1").execute(&self.pool).await?;
         Ok(())
     }
 
@@ -136,12 +136,11 @@ impl AgentRepository {
     pub async fn get_agent_tags(&self, agent_id: Uuid) -> Result<Vec<String>> {
         let id_str = agent_id.to_string();
 
-        let tags: Vec<(String,)> = sqlx::query_as(
-            "SELECT tag FROM agent_tags WHERE agent_id = ? ORDER BY tag"
-        )
-        .bind(&id_str)
-        .fetch_all(&self.pool)
-        .await?;
+        let tags: Vec<(String,)> =
+            sqlx::query_as("SELECT tag FROM agent_tags WHERE agent_id = ? ORDER BY tag")
+                .bind(&id_str)
+                .fetch_all(&self.pool)
+                .await?;
 
         Ok(tags.into_iter().map(|(t,)| t).collect())
     }
@@ -156,7 +155,7 @@ impl AgentRepository {
                 r#"
                 INSERT IGNORE INTO agent_tags (agent_id, tag, created_at)
                 VALUES (?, ?, ?)
-                "#
+                "#,
             )
             .bind(&id_str)
             .bind(tag)
@@ -169,7 +168,7 @@ impl AgentRepository {
                 INSERT INTO agent_tags (agent_id, tag, created_at)
                 VALUES (?, ?, ?)
                 ON CONFLICT(agent_id, tag) DO NOTHING
-                "#
+                "#,
             )
             .bind(&id_str)
             .bind(tag)
@@ -196,11 +195,10 @@ impl AgentRepository {
 
     /// Get all unique tags across all agents
     pub async fn get_all_tags(&self) -> Result<Vec<String>> {
-        let tags: Vec<(String,)> = sqlx::query_as(
-            "SELECT DISTINCT tag FROM agent_tags ORDER BY tag"
-        )
-        .fetch_all(&self.pool)
-        .await?;
+        let tags: Vec<(String,)> =
+            sqlx::query_as("SELECT DISTINCT tag FROM agent_tags ORDER BY tag")
+                .fetch_all(&self.pool)
+                .await?;
 
         Ok(tags.into_iter().map(|(t,)| t).collect())
     }
@@ -290,7 +288,8 @@ impl AgentRepository {
         let (next_seq, mut total_bytes) = match meta {
             Some(m) => (m.next_sequence, m.total_bytes),
             None => {
-                self.init_terminal_history_meta(instance_id, buffer_size_kb).await?;
+                self.init_terminal_history_meta(instance_id, buffer_size_kb)
+                    .await?;
                 (0, 0)
             }
         };
@@ -324,7 +323,7 @@ impl AgentRepository {
             UPDATE terminal_history_meta
             SET next_sequence = ?, total_bytes = ?, updated_at = ?
             WHERE instance_id = ?
-            "#
+            "#,
         )
         .bind(next_seq + 1)
         .bind(total_bytes)
@@ -337,16 +336,12 @@ impl AgentRepository {
     }
 
     /// Trim terminal history to target size, returns new total bytes
-    async fn trim_terminal_history(
-        &self,
-        instance_id: Uuid,
-        target_size: i64,
-    ) -> Result<i64> {
+    async fn trim_terminal_history(&self, instance_id: Uuid, target_size: i64) -> Result<i64> {
         let id_str = instance_id.to_string();
 
         // Get total bytes
         let total: (i64,) = sqlx::query_as(
-            "SELECT COALESCE(SUM(byte_size), 0) FROM terminal_history WHERE instance_id = ?"
+            "SELECT COALESCE(SUM(byte_size), 0) FROM terminal_history WHERE instance_id = ?",
         )
         .bind(&id_str)
         .fetch_one(&self.pool)
@@ -384,7 +379,7 @@ impl AgentRepository {
                 "DELETE FROM terminal_history WHERE id IN (\
                     SELECT id FROM (SELECT id FROM terminal_history WHERE instance_id = ? \
                     ORDER BY sequence_number ASC LIMIT ?) AS tmp\
-                )"
+                )",
             )
             .bind(&id_str)
             .bind(delete_count)
@@ -446,7 +441,7 @@ impl AgentRepository {
             r#"
             DELETE FROM terminal_history_meta
             WHERE instance_id NOT IN (SELECT DISTINCT instance_id FROM terminal_history)
-            "#
+            "#,
         )
         .execute(&self.pool)
         .await?;
@@ -519,9 +514,7 @@ impl AgentRepository {
                 .fetch_one(&self.pool)
                 .await?
         } else {
-            sqlx::query_as(&count_query)
-                .fetch_one(&self.pool)
-                .await?
+            sqlx::query_as(&count_query).fetch_one(&self.pool).await?
         };
 
         // Get records with pagination
@@ -568,12 +561,28 @@ impl AgentRepository {
                     event_type: row.get("event_type"),
                     session_id: row.get("session_id"),
                     user_role: row.get("user_role"),
-                    agent_id: if agent_id.is_empty() { None } else { Some(agent_id) },
-                    instance_id: if instance_id.is_empty() { None } else { Some(instance_id) },
-                    target_id: if target_id.is_empty() { None } else { Some(target_id) },
+                    agent_id: if agent_id.is_empty() {
+                        None
+                    } else {
+                        Some(agent_id)
+                    },
+                    instance_id: if instance_id.is_empty() {
+                        None
+                    } else {
+                        Some(instance_id)
+                    },
+                    target_id: if target_id.is_empty() {
+                        None
+                    } else {
+                        Some(target_id)
+                    },
                     client_ip: row.get("client_ip"),
                     success: row.get("success"),
-                    details: if details.is_empty() { None } else { Some(details) },
+                    details: if details.is_empty() {
+                        None
+                    } else {
+                        Some(details)
+                    },
                 }
             })
             .collect();

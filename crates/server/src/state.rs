@@ -6,7 +6,10 @@ use anyhow::Result;
 use tokio::sync::{broadcast, mpsc, RwLock};
 use uuid::Uuid;
 
-use common::{Agent, AgentInfo, AgentStatus, GlobalStats, Instance, InstanceStatus, Role, ServerToAgentMessage, ServerToUserMessage};
+use common::{
+    Agent, AgentInfo, AgentStatus, GlobalStats, Instance, InstanceStatus, Role,
+    ServerToAgentMessage, ServerToUserMessage,
+};
 
 use crate::auth::hash_token;
 use crate::config::ServerRuntime;
@@ -79,7 +82,12 @@ impl AppState {
     ) -> Result<Self> {
         let (agent_status_tx, _) = broadcast::channel(100);
         let super_admin_token_hash = hash_token(&runtime.config.security.super_admin_token);
-        let agent_secret_hash = runtime.config.security.agent_secret.as_ref().map(|s| hash_token(s));
+        let agent_secret_hash = runtime
+            .config
+            .security
+            .agent_secret
+            .as_ref()
+            .map(|s| hash_token(s));
 
         Ok(Self {
             runtime,
@@ -143,7 +151,10 @@ impl AppState {
         let repo = self.agent_repo.clone();
         let name_clone = name.clone();
         tokio::spawn(async move {
-            if let Err(e) = repo.upsert_agent(agent_id, &name_clone, &admin_token, &share_token).await {
+            if let Err(e) = repo
+                .upsert_agent(agent_id, &name_clone, &admin_token, &share_token)
+                .await
+            {
                 tracing::error!("Failed to persist agent to database: {}", e);
             }
         });
@@ -242,7 +253,11 @@ impl AppState {
     pub async fn send_to_agent(&self, agent_id: Uuid, msg: ServerToAgentMessage) -> Result<()> {
         let agents = self.agents.read().await;
         if let Some(agent) = agents.get(&agent_id) {
-            agent.tx.send(msg).await.map_err(|e| anyhow::anyhow!("Failed to send to agent: {}", e))?;
+            agent
+                .tx
+                .send(msg)
+                .await
+                .map_err(|e| anyhow::anyhow!("Failed to send to agent: {}", e))?;
         }
         Ok(())
     }
@@ -315,7 +330,11 @@ impl AppState {
     pub async fn send_to_user(&self, session_id: Uuid, msg: ServerToUserMessage) -> Result<()> {
         let users = self.users.read().await;
         if let Some(session) = users.get(&session_id) {
-            session.tx.send(msg).await.map_err(|e| anyhow::anyhow!("Failed to send to user: {}", e))
+            session
+                .tx
+                .send(msg)
+                .await
+                .map_err(|e| anyhow::anyhow!("Failed to send to user: {}", e))
         } else {
             Err(anyhow::anyhow!("User session not found: {}", session_id))
         }
@@ -433,7 +452,8 @@ impl AppState {
             for (instance_id, instance) in agent.instances.iter() {
                 if instance.status == InstanceStatus::Suspended {
                     // Check if instance has been suspended for too long
-                    if instance.suspended_at
+                    if instance
+                        .suspended_at
                         .map(|t| now.signed_duration_since(t) > timeout_duration)
                         .unwrap_or(false)
                     {
@@ -468,12 +488,15 @@ impl AppState {
 
         for (_, connected_agent) in agents.iter() {
             let instance_count = connected_agent.instances.len();
-            let running_count = connected_agent.instances.values()
+            let running_count = connected_agent
+                .instances
+                .values()
                 .filter(|i| i.status == InstanceStatus::Running)
                 .count();
 
             // Count users attached to this agent
-            let user_count = users.values()
+            let user_count = users
+                .values()
                 .filter(|u| u.agent_id == Some(connected_agent.agent.id))
                 .count();
 
@@ -511,7 +534,7 @@ impl AppState {
         let mut agents = self.agents.write().await;
         if let Some(removed) = agents.remove(&agent_id) {
             drop(agents); // Release lock before other operations
-            // Clean up token index
+                          // Clean up token index
             {
                 let mut index = self.token_index.write().await;
                 index.remove(&removed.admin_token_hash);
@@ -557,7 +580,10 @@ impl AppState {
             if connected_agent.instances.contains_key(&instance_id) {
                 // Send close command to agent
                 let cmd = ServerToAgentMessage::CloseInstance { instance_id };
-                connected_agent.tx.send(cmd).await
+                connected_agent
+                    .tx
+                    .send(cmd)
+                    .await
                     .map_err(|e| anyhow::anyhow!("Failed to send close command: {}", e))?;
                 return Ok(*agent_id);
             }
@@ -647,8 +673,16 @@ impl AppState {
             let data_str = String::from_utf8_lossy(&bytes).to_string();
             let byte_size = bytes.len() as i32;
             let buffer_size_kb = self.runtime.config.terminal_history.default_buffer_size_kb as i32;
-            if let Err(e) = self.agent_repo.save_terminal_history(instance_id, &data_str, byte_size, buffer_size_kb).await {
-                tracing::warn!("Failed to flush PTY buffer for instance {}: {}, re-buffering", instance_id, e);
+            if let Err(e) = self
+                .agent_repo
+                .save_terminal_history(instance_id, &data_str, byte_size, buffer_size_kb)
+                .await
+            {
+                tracing::warn!(
+                    "Failed to flush PTY buffer for instance {}: {}, re-buffering",
+                    instance_id,
+                    e
+                );
                 // Put data back into buffer on failure, prepending before any new data
                 let mut buffer = self.pty_buffer.write().await;
                 let entry = buffer.entry(instance_id).or_default();
@@ -675,8 +709,16 @@ impl AppState {
             }
             let data_str = String::from_utf8_lossy(&bytes).to_string();
             let byte_size = bytes.len() as i32;
-            if let Err(e) = self.agent_repo.save_terminal_history(instance_id, &data_str, byte_size, buffer_size_kb).await {
-                tracing::warn!("Failed to flush PTY buffer for instance {}: {}, re-buffering", instance_id, e);
+            if let Err(e) = self
+                .agent_repo
+                .save_terminal_history(instance_id, &data_str, byte_size, buffer_size_kb)
+                .await
+            {
+                tracing::warn!(
+                    "Failed to flush PTY buffer for instance {}: {}, re-buffering",
+                    instance_id,
+                    e
+                );
                 // Put data back into buffer on failure, prepending before any new data
                 let mut buffer = self.pty_buffer.write().await;
                 let entry = buffer.entry(instance_id).or_default();
@@ -686,7 +728,10 @@ impl AppState {
     }
 
     /// Get terminal history for an instance
-    pub async fn get_terminal_history(&self, instance_id: Uuid) -> Result<Vec<common::ServerToUserMessage>> {
+    pub async fn get_terminal_history(
+        &self,
+        instance_id: Uuid,
+    ) -> Result<Vec<common::ServerToUserMessage>> {
         if !self.runtime.config.terminal_history.enabled {
             return Ok(Vec::new());
         }
@@ -716,7 +761,11 @@ impl AppState {
         let repo = self.agent_repo.clone();
         tokio::spawn(async move {
             if let Err(e) = repo.delete_terminal_history(instance_id).await {
-                tracing::warn!("Failed to delete terminal history for instance {}: {}", instance_id, e);
+                tracing::warn!(
+                    "Failed to delete terminal history for instance {}: {}",
+                    instance_id,
+                    e
+                );
             }
         });
     }
@@ -724,7 +773,9 @@ impl AppState {
     /// Cleanup old terminal history records
     pub async fn cleanup_old_terminal_history(&self) -> Result<u64> {
         let retention_days = self.runtime.config.terminal_history.retention_days;
-        self.agent_repo.cleanup_old_terminal_history(retention_days).await
+        self.agent_repo
+            .cleanup_old_terminal_history(retention_days)
+            .await
     }
 
     // ========================================================================

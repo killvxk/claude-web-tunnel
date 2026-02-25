@@ -37,7 +37,9 @@ impl TunnelConnection {
 
         Self {
             runtime,
-            instances: Arc::new(tokio::sync::Mutex::new(InstanceManager::with_mode(pty_mode))),
+            instances: Arc::new(tokio::sync::Mutex::new(InstanceManager::with_mode(
+                pty_mode,
+            ))),
         }
     }
 
@@ -54,7 +56,10 @@ impl TunnelConnection {
             // Already a WebSocket URL
             format!("{}/ws/agent", trimmed)
         } else {
-            return Err(anyhow!("Invalid server URL: {}. Must start with http://, https://, ws://, or wss://", url));
+            return Err(anyhow!(
+                "Invalid server URL: {}. Must start with http://, https://, ws://, or wss://",
+                url
+            ));
         };
 
         Ok(ws_url)
@@ -141,9 +146,16 @@ impl TunnelConnection {
                     };
                     if let Ok(json) = msg.to_json() {
                         if let Err(e) = ws_sink.send(Message::Text(json)).await {
-                            warn!("Failed to send buffered output for instance {}: {}", instance_id, e);
+                            warn!(
+                                "Failed to send buffered output for instance {}: {}",
+                                instance_id, e
+                            );
                         } else {
-                            debug!("Sent {} bytes of buffered output for instance {}", data.len(), instance_id);
+                            debug!(
+                                "Sent {} bytes of buffered output for instance {}",
+                                data.len(),
+                                instance_id
+                            );
                         }
                     }
                 }
@@ -254,7 +266,10 @@ impl TunnelConnection {
                 info!("Creating instance {} in {}", instance_id, cwd);
 
                 let mut instances = self.instances.lock().await;
-                match instances.create_instance(instance_id, &cwd, pty_tx.clone()).await {
+                match instances
+                    .create_instance(instance_id, &cwd, pty_tx.clone())
+                    .await
+                {
                     Ok(_) => {
                         // Send instance created confirmation
                         let msg = AgentMessage::InstanceCreated {
@@ -300,9 +315,15 @@ impl TunnelConnection {
                 }
             }
             ServerToAgentMessage::Resize { instance_id, size } => {
-                info!("Resizing instance {} to {}x{}", instance_id, size.cols, size.rows);
+                info!(
+                    "Resizing instance {} to {}x{}",
+                    instance_id, size.cols, size.rows
+                );
                 let instances = self.instances.lock().await;
-                if let Err(e) = instances.resize_instance(instance_id, size.cols, size.rows).await {
+                if let Err(e) = instances
+                    .resize_instance(instance_id, size.cols, size.rows)
+                    .await
+                {
                     warn!("Failed to resize instance {}: {}", instance_id, e);
                 }
             }

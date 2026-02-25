@@ -65,16 +65,8 @@ impl AgentRuntime {
             .unwrap_or_else(Uuid::new_v4);
 
         // Resolve tokens (generate if not specified)
-        let admin_token = config
-            .tokens
-            .admin
-            .clone()
-            .unwrap_or_else(generate_token);
-        let share_token = config
-            .tokens
-            .share
-            .clone()
-            .unwrap_or_else(generate_token);
+        let admin_token = config.tokens.admin.clone().unwrap_or_else(generate_token);
+        let share_token = config.tokens.share.clone().unwrap_or_else(generate_token);
 
         // Update config with resolved values
         config.agent.id = Some(agent_id.to_string());

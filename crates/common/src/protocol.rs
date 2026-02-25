@@ -415,7 +415,12 @@ macro_rules! impl_json_serialization {
     };
 }
 
-impl_json_serialization!(AgentMessage, ServerToAgentMessage, UserMessage, ServerToUserMessage);
+impl_json_serialization!(
+    AgentMessage,
+    ServerToAgentMessage,
+    UserMessage,
+    ServerToUserMessage
+);
 
 #[cfg(test)]
 mod tests {
