@@ -391,7 +391,7 @@ impl AppState {
         if let Some(agent) = agents.get_mut(&agent_id) {
             let now = chrono::Utc::now();
             for instance in agent.instances.values_mut() {
-                instance.status = status.clone();
+                instance.status = status;
                 if status == InstanceStatus::Suspended {
                     instance.suspended_at = Some(now);
                 } else {
