@@ -1,0 +1,260 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: "Tag name for the release (e.g., v0.1.0)"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # ──────────────────────────────────────────────
+  # Job 1: Build Svelte web frontend (for server)
+  # ──────────────────────────────────────────────
+  build-web:
+    name: Build Web Frontend
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install dependencies
+        run: cd web && npm ci
+
+      - name: Build frontend
+        run: cd web && npm run build
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: web-dist
+          path: web/dist/
+          retention-days: 1
+
+  # ──────────────────────────────────────────────
+  # Job 2: Build binaries (4-platform matrix)
+  #   Linux  → server + agent + deploy scripts
+  #   Others → agent only
+  # ──────────────────────────────────────────────
+  build:
+    name: Build ${{ matrix.name }}
+    needs: build-web
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: linux-x86_64
+            os: ubuntu-22.04
+            target: x86_64-unknown-linux-musl
+            asset_suffix: linux-x86_64
+            build_server: true
+
+          - name: linux-aarch64
+            os: ubuntu-22.04
+            target: aarch64-unknown-linux-musl
+            asset_suffix: linux-aarch64
+            build_server: true
+            use_cross: true
+
+          - name: macos-aarch64
+            os: macos-14
+            target: aarch64-apple-darwin
+            asset_suffix: macos-aarch64
+            build_server: false
+
+          - name: windows-x64
+            os: windows-latest
+            target: x86_64-pc-windows-msvc
+            asset_suffix: windows-x64
+            build_server: false
+
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download web frontend
+        if: matrix.build_server == true
+        uses: actions/download-artifact@v4
+        with:
+          name: web-dist
+          path: web/dist/
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+
+      # Linux x86_64 musl needs musl-tools
+      - name: Install musl-tools
+        if: matrix.target == 'x86_64-unknown-linux-musl'
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
+
+      # Linux aarch64 musl needs cross for cross-compilation
+      - name: Install cross
+        if: matrix.use_cross == true
+        run: cargo install cross
+
+      - name: Build server
+        if: matrix.build_server == true
+        shell: bash
+        run: |
+          BUILD_CMD="cargo"
+          if [ "${{ matrix.use_cross }}" = "true" ]; then
+            BUILD_CMD="cross"
+          fi
+          $BUILD_CMD build --package server --target ${{ matrix.target }} --release
+
+      - name: Build agent
+        shell: bash
+        run: |
+          BUILD_CMD="cargo"
+          if [ "${{ matrix.use_cross }}" = "true" ]; then
+            BUILD_CMD="cross"
+          fi
+          $BUILD_CMD build --package agent --target ${{ matrix.target }} --release
+
+      # Linux: tar.gz with server + agent + deploy/
+      - name: Package Linux release
+        if: matrix.build_server == true
+        shell: bash
+        run: |
+          SUFFIX="${{ matrix.asset_suffix }}"
+          PKG="claude-web-tunnel-${SUFFIX}"
+          mkdir -p "${PKG}"
+
+          SRC="target/${{ matrix.target }}/release"
+          cp "${SRC}/claude-tunnel-server" "${PKG}/"
+          cp "${SRC}/claude-tunnel-agent" "${PKG}/"
+          cp -r deploy "${PKG}/"
+
+          tar czf "${PKG}.tar.gz" "${PKG}"
+
+          sha256sum "${PKG}.tar.gz" > "${PKG}.tar.gz.sha256"
+
+          mkdir -p artifacts
+          mv "${PKG}.tar.gz" "${PKG}.tar.gz.sha256" artifacts/
+
+      # macOS / Windows: bare agent binary
+      - name: Package agent binary
+        if: matrix.build_server != true
+        shell: bash
+        run: |
+          mkdir -p artifacts
+          SRC="target/${{ matrix.target }}/release"
+          SUFFIX="${{ matrix.asset_suffix }}"
+
+          EXT=""
+          if [[ "${{ matrix.target }}" == *"windows"* ]]; then EXT=".exe"; fi
+
+          cp "${SRC}/claude-tunnel-agent${EXT}" "artifacts/claude-tunnel-agent-${SUFFIX}${EXT}"
+
+          cd artifacts
+          for file in claude-tunnel-*; do
+            if command -v sha256sum &>/dev/null; then
+              sha256sum "$file" > "${file}.sha256"
+            else
+              shasum -a 256 "$file" > "${file}.sha256"
+            fi
+          done
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ matrix.asset_suffix }}
+          path: artifacts/
+          retention-days: 1
+
+  # ──────────────────────────────────────────────
+  # Job 3: Create GitHub Release
+  # ──────────────────────────────────────────────
+  release:
+    name: Create Release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: release-*
+          path: release/
+          merge-multiple: true
+
+      - name: Generate combined checksums
+        run: |
+          cd release
+          cat *.sha256 | sort > SHA256SUMS.txt
+          rm -f *.sha256
+
+      - name: Determine release tag
+        id: meta
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            TAG="${{ inputs.tag_name }}"
+          else
+            TAG="${GITHUB_REF#refs/tags/}"
+          fi
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.meta.outputs.tag }}
+          name: Claude Web Tunnel ${{ steps.meta.outputs.tag }}
+          draft: true
+          prerelease: ${{ contains(steps.meta.outputs.tag, '-') }}
+          generate_release_notes: true
+          body: |
+            ## Download
+
+            | Platform | Package | Contents |
+            |----------|---------|----------|
+            | Linux x86_64 | `claude-web-tunnel-linux-x86_64.tar.gz` | Server + Agent + Install scripts |
+            | Linux aarch64 | `claude-web-tunnel-linux-aarch64.tar.gz` | Server + Agent + Install scripts |
+            | macOS arm64 | `claude-tunnel-agent-macos-aarch64` | Agent |
+            | Windows x64 | `claude-tunnel-agent-windows-x64.exe` | Agent |
+
+            ## Linux server deployment
+
+            ```bash
+            tar xzf claude-web-tunnel-linux-x86_64.tar.gz
+            cd claude-web-tunnel-linux-x86_64
+            sudo ./deploy/install.sh
+            ```
+
+            ## Agent setup
+
+            See `deploy/configs/agent.toml.example` in the Linux package for configuration template.
+
+            ## Verify checksums
+
+            ```bash
+            sha256sum -c SHA256SUMS.txt
+            ```
+
+            ---
+
+          files: release/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

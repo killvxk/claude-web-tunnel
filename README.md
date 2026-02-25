@@ -1,5 +1,8 @@
 # Claude Web Tunnel
 
+[![CI](../../actions/workflows/ci.yml/badge.svg)](../../actions/workflows/ci.yml)
+[![Release](../../actions/workflows/release.yml/badge.svg)](../../actions/workflows/release.yml)
+
 通过 Web 界面远程操作本地 Claude Code 实例的隧道系统。
 
 ## 功能特性
@@ -65,6 +68,21 @@
 
 ### 1. 服务器部署 (Linux)
 
+#### 方式一：从 GitHub Release 下载（推荐）
+
+从 [Releases](../../releases) 页面下载对应平台的安装包：
+
+```bash
+# 下载并解压
+tar xzf claude-web-tunnel-linux-x86_64.tar.gz
+cd claude-web-tunnel-linux-x86_64
+
+# 部署（交互式引导）
+sudo ./deploy/install.sh
+```
+
+#### 方式二：从源码构建
+
 ```bash
 # 1. 克隆仓库
 git clone https://github.com/yourname/claude-web-tunnel.git
@@ -92,11 +110,18 @@ Agent 运行在你的本地机器上，通过 WebSocket 连接到远程服务器
 
 #### 2.1 获取 Agent 二进制文件
 
-```bash
-# 方式一：从构建产物复制
-scp your-server:/path/to/dist/linux/claude-tunnel-agent ./
+从 [Releases](../../releases) 页面下载对应平台的 Agent：
 
-# 方式二：本地构建
+| 平台 | 文件 |
+|------|------|
+| Linux x86_64 | `claude-web-tunnel-linux-x86_64.tar.gz` 内含 |
+| Linux aarch64 | `claude-web-tunnel-linux-aarch64.tar.gz` 内含 |
+| macOS arm64 | `claude-tunnel-agent-macos-aarch64` |
+| Windows x64 | `claude-tunnel-agent-windows-x64.exe` |
+
+或从源码构建：
+
+```bash
 ./build-linux.sh --agent-only
 ```
 
@@ -494,6 +519,9 @@ claude-web-tunnel/
 │   ├── install.sh           # 主安装脚本
 │   ├── scripts/             # 子安装脚本
 │   └── configs/             # 配置文件模板
+├── .github/workflows/       # CI/CD
+│   ├── ci.yml               # PR/push 检查 (check, clippy, fmt)
+│   └── release.yml          # 自动发布 (tag 触发, 4 平台构建)
 ├── build-linux.sh           # Linux musl 静态构建
 ├── build-windows.ps1        # Windows 构建
 ├── build-macos.sh           # macOS 构建 (支持 universal binary)
