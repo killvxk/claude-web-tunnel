@@ -487,7 +487,7 @@ impl AppState {
             agent_infos.push(AgentInfo {
                 id: connected_agent.agent.id,
                 name: connected_agent.agent.name.clone(),
-                status: connected_agent.agent.status.clone(),
+                status: connected_agent.agent.status,
                 connected_at: connected_agent.agent.connected_at,
                 instance_count,
                 user_count,
@@ -732,6 +732,7 @@ impl AppState {
     // ========================================================================
 
     /// Log an audit event (async, non-blocking)
+    #[allow(clippy::too_many_arguments)]
     pub fn log_audit_event(
         &self,
         event_type: &str,

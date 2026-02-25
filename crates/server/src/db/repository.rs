@@ -459,6 +459,7 @@ impl AgentRepository {
     // ========================================================================
 
     /// Insert an audit log entry
+    #[allow(clippy::too_many_arguments)]
     pub async fn insert_audit_log(
         &self,
         event_type: &str,

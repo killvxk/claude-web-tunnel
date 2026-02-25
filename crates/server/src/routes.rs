@@ -63,6 +63,7 @@ async fn fallback_index_handler() -> Html<&'static str> {
 
 /// Validate WebSocket Origin header against allowed_origins config.
 /// Returns Ok(()) if valid, Err(response) if rejected.
+#[allow(clippy::result_large_err)]
 fn validate_origin(headers: &HeaderMap, state: &AppState) -> Result<(), axum::response::Response> {
     let allowed = &state.runtime.config.server.allowed_origins;
     if allowed.is_empty() {

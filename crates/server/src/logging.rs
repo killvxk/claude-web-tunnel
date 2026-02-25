@@ -32,7 +32,7 @@ pub fn init_logging(config: &LoggingConfig) -> LogGuard {
         // Parse rotation policy
         let rotation = match config.rotation.to_lowercase().as_str() {
             "hourly" => Rotation::HOURLY,
-            "daily" | _ => Rotation::DAILY,
+            _ => Rotation::DAILY,
         };
 
         // Get directory and file prefix from path

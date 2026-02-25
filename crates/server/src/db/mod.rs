@@ -32,7 +32,7 @@ pub async fn init_database(runtime: &ServerRuntime) -> Result<AnyPool> {
         }
     };
 
-    tracing::info!("Connecting to database: {} (type: {})", url.split('@').last().unwrap_or(&url), db_type);
+    tracing::info!("Connecting to database: {} (type: {})", url.split('@').next_back().unwrap_or(&url), db_type);
 
     let pool = AnyPoolOptions::new()
         .max_connections(5)
